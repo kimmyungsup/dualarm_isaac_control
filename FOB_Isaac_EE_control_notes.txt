@@ -1,0 +1,717 @@
+
+FOB → Isaac Sim → 로봇팔 End-Effector 실시간 제어 개발 노트
+=======================================================
+
+작성 목적
+---------
+이 문서는 Ascension Flock of Birds(FOB) 트래커에서 받은 위치/자세 데이터를
+Isaac Sim 또는 로봇팔 시뮬레이션의 End-Effector(EE) target pose로 변환하여
+실시간 추종시키기 위한 설계 및 코드 개발 내용을 정리한 문서이다.
+
+이전 세션에서 FOB 관련으로 이미 개발/확인된 내용:
+- Linux + FTDI FT4232H Quad RS232-HS 기반 시리얼 통신
+- /dev/ttyUSB0~3 포트 생성 확인
+- /dev/ttyUSB0에서 FOB POINT 명령 0x42 송신 시 12바이트 응답 확인
+- POSITION/ANGLES 12바이트 레코드 파싱 코드 작성
+- 파일:
+  - fob_serial_test_no_cgkit.py
+  - fob_position_angles_reader.py
+
+
+1. 전체 시스템 목표
+-------------------
+
+최종 목표:
+
+    FOB sensor pose
+        ↓
+    Python serial reader
+        ↓
+    position/orientation parser
+        ↓
+    coordinate calibration
+        ↓
+    smoothing / scaling / safety clamp
+        ↓
+    Isaac Sim robot EE target pose
+        ↓
+    IK solver
+        ↓
+    robot joint command
+        ↓
+    simulated robot arm follows FOB movement
+
+즉, 사용자가 FOB 트래커를 손에 들고 움직이면,
+Isaac Sim 내 로봇팔의 말단 링크가 해당 위치/방향을 따라가도록 한다.
+
+
+2. 권장 소프트웨어 구조
+----------------------
+
+가장 단순한 구조:
+
+    main loop
+        1. FOB에서 pose 1개 읽기
+        2. FOB 좌표계를 Isaac world/base 좌표계로 변환
+        3. target pose filtering
+        4. IK 계산
+        5. joint target 적용
+        6. simulation step
+
+더 안정적인 구조:
+
+    Thread 1: FOB Serial Reader
+        - serial port에서 데이터 읽기
+        - 최신 FOB pose를 shared state에 저장
+
+    Thread 2: Pose Processing
+        - 좌표계 변환
+        - scale/offset
+        - low-pass filter
+        - safety boundary clamp
+
+    Main Isaac Thread:
+        - 최신 target pose 읽기
+        - IK 계산
+        - articulation action 적용
+        - world.step()
+
+주의:
+- Isaac Sim API 호출은 보통 main simulation thread에서 수행하는 것이 안전하다.
+- serial read는 blocking이 될 수 있으므로 별도 thread로 분리하는 편이 좋다.
+
+
+3. Isaac Sim 로봇 구성 가정
+--------------------------
+
+사용자의 기존 dual-arm 시스템 메모:
+
+- Isaac Sim 4.5 기반 사용
+- dual-arm 7 DOF each
+- prim path 예시:
+
+    /World/v4_onlyarm_urdf_1_0
+
+- End-effector link:
+    Right arm EE: link7
+    Left arm EE:  link14
+
+- DOF 이름 읽기 순서 예시:
+
+    [joint1, joint8, joint2, joint9, joint3, joint10,
+     joint4, joint11, joint5, joint12, joint6, joint13,
+     joint7, joint14]
+
+- active index snapshot:
+    Right active: [0, 2, 4, 6, 8, 10]
+    Right passive: 12
+    Left active:  [1, 3, 5, 7, 9, 11]
+    Left passive: 13
+
+주의:
+- 실제 articulation의 DOF 순서와 active index는 로딩 후 반드시 다시 출력해서 확인해야 한다.
+- passive joint가 있으면 IK 적용 시 제외하거나 고정해야 한다.
+- 기존에 keyboard task-space 제어, world/local toggle, EE raycast, arm select 등이 구현되어 있었음.
+
+
+4. FOB 좌표계와 Isaac 좌표계
+----------------------------
+
+FOB에서 파싱되는 값:
+
+    x_fob, y_fob, z_fob
+    azimuth, elevation, roll
+
+현재 fob_position_angles_reader.py는 다음을 출력:
+
+    X, Y, Z [cm]
+    Azimuth, Elevation, Roll [deg]
+
+그러나 이 좌표를 바로 Isaac world pose로 쓰면 안 된다.
+반드시 다음 변환이 필요하다.
+
+기본 변환식:
+
+    p_world = R_world_from_fob @ (s * p_fob) + t_world_from_fob
+
+여기서:
+- p_fob: FOB 위치 벡터
+- s: scale factor
+- R_world_from_fob: FOB 좌표계에서 Isaac world/base 좌표계로 가는 회전행렬
+- t_world_from_fob: 원점 offset
+- p_world: Isaac Sim target 위치
+
+자세까지 포함한 homogeneous transform:
+
+    T_world_tool =
+        T_world_from_fob
+        @ T_fob_sensor
+        @ T_sensor_tool
+
+여기서:
+- T_world_from_fob: 캘리브레이션으로 구한 좌표계 변환
+- T_fob_sensor: FOB가 측정한 센서 pose
+- T_sensor_tool: 센서 장착 위치에서 실제 조작점/tool tip까지의 고정 변환
+
+
+5. 좌표계 캘리브레이션 방법
+---------------------------
+
+추천: 6점 이상 위치 캘리브레이션
+
+절차:
+1. Isaac Sim 또는 실제 작업공간에 기준점 N개를 정의
+2. FOB 센서를 각 기준점에 가져다 놓음
+3. 다음 대응쌍을 저장:
+
+    p_fob_i  ↔  p_world_i
+
+4. rigid transform을 least-squares로 계산
+
+Kabsch / Umeyama 알고리즘 사용 가능.
+
+간단한 Python 함수 예시:
+
+```python
+import numpy as np
+
+def estimate_rigid_transform(A, B):
+    '''
+    A: Nx3 source points, FOB coordinates
+    B: Nx3 target points, Isaac/world coordinates
+
+    returns R, t such that:
+        B ~= R @ A + t
+    '''
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+
+    centroid_A = A.mean(axis=0)
+    centroid_B = B.mean(axis=0)
+
+    AA = A - centroid_A
+    BB = B - centroid_B
+
+    H = AA.T @ BB
+    U, S, Vt = np.linalg.svd(H)
+    R = Vt.T @ U.T
+
+    # reflection correction
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+
+    t = centroid_B - R @ centroid_A
+    return R, t
+```
+
+사용:
+
+```python
+R_world_from_fob, t_world_from_fob = estimate_rigid_transform(
+    fob_points,
+    world_points
+)
+
+p_world = R_world_from_fob @ p_fob + t_world_from_fob
+```
+
+
+6. 필터링 및 안정화
+-------------------
+
+FOB는 전자기식 트래커이므로 노이즈, 튐, 금속 환경 영향이 있을 수 있다.
+로봇 EE target으로 바로 넣으면 IK 목표가 떨릴 수 있다.
+
+권장 필터:
+
+1. Low-pass filter
+
+```python
+class LowPassFilter:
+    def __init__(self, alpha=0.2):
+        self.alpha = alpha
+        self.y = None
+
+    def update(self, x):
+        x = np.asarray(x, dtype=float)
+        if self.y is None:
+            self.y = x.copy()
+        else:
+            self.y = self.alpha * x + (1.0 - self.alpha) * self.y
+        return self.y.copy()
+```
+
+alpha 선택:
+- 0.05: 매우 부드러움, 지연 큼
+- 0.1~0.2: 일반적인 teleop에 적당
+- 0.3~0.5: 반응 빠름, 떨림 커질 수 있음
+
+2. Rate limiter
+
+```python
+def limit_delta(prev, target, max_step):
+    delta = target - prev
+    norm = np.linalg.norm(delta)
+    if norm > max_step:
+        delta = delta / norm * max_step
+    return prev + delta
+```
+
+3. Workspace clamp
+
+```python
+def clamp_workspace(p):
+    x, y, z = p
+    x = np.clip(x, -0.6, 0.6)
+    y = np.clip(y, -0.8, 0.8)
+    z = np.clip(z,  0.1, 1.2)
+    return np.array([x, y, z])
+```
+
+dual-arm 환경에서는 중앙선 침범 제한도 필요:
+
+```python
+def clamp_right_arm_workspace(p):
+    # 예: 오른팔은 table 중앙선을 넘지 않도록 y 제한
+    p = p.copy()
+    p[1] = np.clip(p[1], -0.8, -0.02)
+    return p
+
+def clamp_left_arm_workspace(p):
+    p = p.copy()
+    p[1] = np.clip(p[1], 0.02, 0.8)
+    return p
+```
+
+
+7. FOB Reader와 Isaac 제어 통합 구조
+------------------------------------
+
+FOB reader thread 예시:
+
+```python
+import threading
+import time
+import numpy as np
+
+class SharedPose:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.position_cm = None
+        self.euler_deg = None
+        self.timestamp = None
+
+    def set(self, position_cm, euler_deg):
+        with self.lock:
+            self.position_cm = np.array(position_cm, dtype=float)
+            self.euler_deg = np.array(euler_deg, dtype=float)
+            self.timestamp = time.time()
+
+    def get(self):
+        with self.lock:
+            if self.position_cm is None:
+                return None, None, None
+            return self.position_cm.copy(), self.euler_deg.copy(), self.timestamp
+```
+
+Serial reader thread:
+
+```python
+def fob_reader_loop(fob, shared_pose, stop_event):
+    while not stop_event.is_set():
+        try:
+            pose = fob.read_pose_angles()
+            position_cm = [pose.x_cm, pose.y_cm, pose.z_cm]
+            euler_deg = [pose.azimuth_deg, pose.elevation_deg, pose.roll_deg]
+            shared_pose.set(position_cm, euler_deg)
+        except Exception as e:
+            print("[FOB WARN]", e)
+            time.sleep(0.01)
+```
+
+
+8. Isaac Sim IK 제어 개념
+-------------------------
+
+Isaac Sim에서 로봇 EE를 target pose로 움직이는 일반 흐름:
+
+1. articulation 객체 준비
+2. IK solver 준비
+3. target position/orientation 입력
+4. IK 결과 joint positions 획득
+5. articulation controller에 action 적용
+
+개념 코드:
+
+```python
+from omni.isaac.core.utils.types import ArticulationAction
+
+# target_joint_positions: IK solver 결과
+action = ArticulationAction(
+    joint_positions=target_joint_positions
+)
+
+articulation_controller.apply_action(action)
+```
+
+사용자의 기존 시스템에서는 LulaKinematicsSolver와 articulation IK를 사용한 이력이 있음.
+따라서 FOB target pose를 기존 keyboard task-space 제어의 target pose 입력부에 연결하는 것이 가장 현실적이다.
+
+즉, 기존 코드가 다음 구조라면:
+
+```python
+target_pos, target_quat = keyboard_controller.get_target_pose()
+ik_result = ik_solver.compute_inverse_kinematics(
+    target_position=target_pos,
+    target_orientation=target_quat
+)
+apply_ik_result(ik_result)
+```
+
+이를 다음처럼 바꾸면 된다:
+
+```python
+target_pos, target_quat = fob_controller.get_target_pose()
+ik_result = ik_solver.compute_inverse_kinematics(
+    target_position=target_pos,
+    target_orientation=target_quat
+)
+apply_ik_result(ik_result)
+```
+
+
+9. Isaac Sim 통합용 클래스 설계
+-------------------------------
+
+권장 클래스:
+
+```python
+class FobTeleopController:
+    def __init__(self, fob_reader, R_world_from_fob, t_world_from_fob):
+        self.fob_reader = fob_reader
+        self.R = R_world_from_fob
+        self.t = t_world_from_fob
+        self.position_filter = LowPassFilter(alpha=0.15)
+        self.scale = 0.01  # cm -> m
+        self.enabled = True
+
+    def get_target_position(self):
+        pose = self.fob_reader.get_latest()
+        if pose is None:
+            return None
+
+        p_cm = np.array([pose.x_cm, pose.y_cm, pose.z_cm])
+        p_m = p_cm * self.scale
+
+        p_world = self.R @ p_m + self.t
+        p_world = self.position_filter.update(p_world)
+        p_world = clamp_workspace(p_world)
+        return p_world
+```
+
+자세 제어까지 포함할 경우:
+
+```python
+def get_target_pose(self):
+    p_world = self.get_target_position()
+
+    # 초기 단계에서는 orientation을 고정하는 것을 추천
+    q_world = np.array([1.0, 0.0, 0.0, 0.0])  # Isaac convention 확인 필요
+
+    return p_world, q_world
+```
+
+중요:
+- 첫 단계에서는 orientation 추종을 끄고 position만 추종하는 것을 추천
+- position 추종이 안정화된 뒤 orientation 추종 추가
+
+
+10. Orientation 처리
+--------------------
+
+FOB POSITION/ANGLES는 다음 각도 순서로 해석됨:
+
+    Z angle
+    Y angle
+    X angle
+
+출력에서는 이를 다음처럼 표시:
+
+    Azimuth
+    Elevation
+    Roll
+
+주의:
+- FOB의 Euler angle convention과 Isaac의 quaternion convention을 반드시 확인해야 한다.
+- Euler angle 순서가 틀리면 EE가 이상하게 회전한다.
+- 초기 구현에서는 orientation을 고정하고 position만 제어하는 것이 안전하다.
+
+Euler → Quaternion 변환 예시:
+
+```python
+from scipy.spatial.transform import Rotation as R
+
+def fob_angles_to_quat_xyzw(az_deg, el_deg, roll_deg):
+    # 이 순서는 반드시 실제 FOB convention과 맞춰 검증해야 함
+    rot = R.from_euler('ZYX', [az_deg, el_deg, roll_deg], degrees=True)
+    return rot.as_quat()  # scipy: [x, y, z, w]
+```
+
+Isaac에서 필요한 quaternion 순서가 [w, x, y, z]인지 [x, y, z, w]인지
+사용 API 기준으로 확인 필요.
+
+
+11. Isaac Sim main loop 예시
+----------------------------
+
+개념 예시:
+
+```python
+while simulation_app.is_running():
+    world.step(render=True)
+
+    p_fob_cm, euler_deg, ts = shared_pose.get()
+    if p_fob_cm is None:
+        continue
+
+    # stale data check
+    if time.time() - ts > 0.2:
+        continue
+
+    p_fob_m = p_fob_cm * 0.01
+    p_target = R_world_from_fob @ p_fob_m + t_world_from_fob
+
+    p_target = pos_filter.update(p_target)
+    p_target = clamp_workspace(p_target)
+
+    # orientation은 초기에는 고정
+    q_target = fixed_ee_quat
+
+    success, joint_positions = ik_solver.compute_inverse_kinematics(
+        target_position=p_target,
+        target_orientation=q_target
+    )
+
+    if success:
+        action = ArticulationAction(joint_positions=joint_positions)
+        articulation_controller.apply_action(action)
+```
+
+실제 Isaac API에서는 사용하는 IK solver wrapper에 따라 반환 형태가 다를 수 있다.
+기존에 사용하던 keyboard EE 제어 코드의 IK 호출부를 재사용하는 것이 가장 안전하다.
+
+
+12. 안전장치
+------------
+
+필수 안전 조건:
+
+1. Deadman switch
+   - 특정 키를 누를 때만 FOB target 적용
+   - 키를 떼면 target hold
+
+2. Workspace clamp
+   - 로봇 reachable workspace 밖 target 제거
+
+3. Velocity limit
+   - target 위치 변화량 제한
+
+4. IK failure handling
+   - IK 실패 시 이전 joint target 유지
+
+5. Stale data check
+   - 일정 시간 이상 FOB 데이터가 갱신되지 않으면 제어 중지
+
+6. Emergency stop
+   - 키보드 ESC 또는 특정 key로 제어 비활성화
+
+예시:
+
+```python
+if not teleop_enabled:
+    continue
+
+if time.time() - latest_fob_time > 0.2:
+    print("FOB data stale. Hold target.")
+    continue
+
+if not ik_success:
+    print("IK failed. Hold previous pose.")
+    continue
+```
+
+
+13. 초기 테스트 순서
+-------------------
+
+Step 1.
+FOB raw 통신 확인
+
+    python3 fob_serial_test_no_cgkit.py --port /dev/ttyUSB0 --baud 115200 poll --req-hex "42"
+
+Step 2.
+FOB pose 출력 확인
+
+    python3 fob_position_angles_reader.py --port /dev/ttyUSB0 --baud 115200 --raw
+
+Step 3.
+센서를 좌우/상하/전후로 움직이고 어느 축이 어떻게 변하는지 기록
+
+Step 4.
+임시 축 매핑 수동 설정
+
+예:
+
+```python
+# 예시일 뿐이며 실제 측정 후 결정
+p_world = np.array([
+    +p_fob[0],
+    -p_fob[1],
+    +p_fob[2],
+])
+```
+
+Step 5.
+Isaac Sim에서 target sphere만 먼저 움직이기
+
+Step 6.
+로봇 EE IK 연결
+
+Step 7.
+필터, clamp, deadman switch 추가
+
+Step 8.
+orientation 추종 추가
+
+
+14. Target sphere 디버깅
+------------------------
+
+로봇을 바로 움직이기 전에 Isaac world 안에 target marker/sphere를 하나 만들고,
+FOB 위치가 이 sphere 위치로 잘 매핑되는지 확인하는 것이 좋다.
+
+개념:
+
+```python
+target_marker.set_world_pose(position=p_target)
+```
+
+확인할 것:
+- 손을 오른쪽으로 움직이면 marker도 의도한 방향으로 움직이는가
+- 위로 들면 z가 증가하는가
+- 움직임 스케일이 적당한가
+- 지터가 심하지 않은가
+
+이 단계에서 좌표계 보정이 끝난 뒤 로봇 IK에 연결해야 한다.
+
+
+15. 파일 구조 제안
+------------------
+
+권장 프로젝트 구조:
+
+    fob_isaac_teleop/
+        fob_serial.py
+        fob_parser.py
+        fob_filters.py
+        fob_calibration.py
+        fob_teleop_controller.py
+        isaac_robot_controller.py
+        run_fob_to_isaac.py
+        configs/
+            fob_config.yaml
+            robot_config.yaml
+        logs/
+            calibration_points.csv
+
+역할:
+
+fob_serial.py
+    serial open, POINT command, record read
+
+fob_parser.py
+    12-byte POSITION/ANGLES parser
+
+fob_filters.py
+    low-pass, rate limiter, workspace clamp
+
+fob_calibration.py
+    rigid transform estimation
+
+fob_teleop_controller.py
+    FOB pose → Isaac target pose
+
+isaac_robot_controller.py
+    articulation, IK, joint command
+
+run_fob_to_isaac.py
+    main entry point
+
+
+16. 설정 파일 예시
+------------------
+
+YAML 예시:
+
+```yaml
+fob:
+  port: /dev/ttyUSB0
+  baud: 115200
+  range_in: 36
+  period: 0.02
+
+filter:
+  alpha: 0.15
+  max_step_m: 0.02
+
+workspace:
+  x_min: -0.6
+  x_max: 0.6
+  y_min: -0.8
+  y_max: 0.8
+  z_min: 0.1
+  z_max: 1.2
+
+robot:
+  prim_path: /World/v4_onlyarm_urdf_1_0
+  right_ee_frame: link7
+  left_ee_frame: link14
+  arm: right
+```
+
+
+17. 다음 세션에서 바로 할 일
+----------------------------
+
+다음 세션에서 추천 요청:
+
+"이 문서와 fob_position_angles_reader.py를 기반으로
+Isaac Sim에서 target sphere를 FOB 좌표에 따라 움직이는
+run_fob_marker_test.py를 만들어줘."
+
+그 다음 요청:
+
+"target sphere가 잘 움직이는 것을 확인했으니
+기존 dual-arm IK 코드에 연결해서 오른팔 EE가 FOB position을 따라가게 해줘."
+
+그 다음 요청:
+
+"orientation까지 POSITION/ANGLES 또는 POSITION/QUATERNION으로 연동해줘."
+
+
+18. 현재까지의 결론
+-------------------
+
+현재 FOB는 Python에서 POINT 명령으로 데이터를 받을 수 있는 상태이다.
+따라서 다음 개발의 핵심은 serial 통신이 아니라:
+
+1. FOB 좌표계 검증
+2. 좌표계 변환
+3. Isaac target marker 테스트
+4. IK 연결
+5. safety/filter 적용
+
+이다.
+
+초기에는 orientation을 고정하고 position만 추종시키는 것이 가장 안전하다.

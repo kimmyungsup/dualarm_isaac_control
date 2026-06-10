@@ -1,0 +1,104 @@
+Flock of Birds (FOB) Linux/Python 개발 세션 요약
+
+목표
+- Ascension Flock of Birds 트래커를 Linux에서 Python으로 사용
+- USB-RS232(FTDI FT4232H) 통신
+- 위치/자세 데이터 수신
+- Isaac Sim 및 로봇팔 EE 추종 연동
+
+하드웨어 확인
+- FTDI FT4232H Quad RS232-HS 확인
+- 생성 포트:
+  /dev/ttyUSB0
+  /dev/ttyUSB1
+  /dev/ttyUSB2
+  /dev/ttyUSB3
+
+통신 문제 해결
+1. dialout 권한 문제 해결
+2. Multi 4U 경유 연결 제거 후 통신 정상화
+3. POINT 명령(0x42) 송신 시 12바이트 응답 확인
+
+주요 FOB 명령
+- 0x42 ('B') : POINT
+- 0x56 ('V') : POSITION
+- 0x59 ('Y') : POSITION/ANGLES
+- 0x5D (']') : POSITION/QUATERNION
+
+개발 파일 1
+파일명:
+fob_serial_test_no_cgkit.py
+
+기능:
+- pyserial 기반
+- HEX 출력
+- Poll/Stream 모드
+- FOB 통신 테스트
+
+예시:
+python3 fob_serial_test_no_cgkit.py --port /dev/ttyUSB0 --baud 115200
+
+개발 파일 2
+파일명:
+fob_position_angles_reader.py
+
+기능:
+- POINT 요청
+- 12바이트 POSITION/ANGLES 레코드 파싱
+- X,Y,Z
+- Azimuth, Elevation, Roll 출력
+
+예시:
+python3 fob_position_angles_reader.py --port /dev/ttyUSB0 --baud 115200
+
+파싱 정보
+- 레코드 길이: 12 bytes
+- 구성:
+  X position
+  Y position
+  Z position
+  Z angle
+  Y angle
+  X angle
+
+디코딩:
+word = ((msb & 0x7F) << 9) | ((lsb & 0x7F) << 2)
+
+위치:
+position = signed_int * range_inches / 32768
+
+각도:
+angle_deg = signed_int * 180 / 32768
+
+Phasing bit
+- 첫 바이트 bit7 = 1
+- 나머지 bit7 = 0
+
+Range 설정
+- 기본 36 inch
+- 옵션:
+  --range-in 72
+  --range-in 144
+
+최종 목표 파이프라인
+FOB
+ -> Serial Reader
+ -> Pose Parser
+ -> Coordinate Transform
+ -> Isaac Sim Target Pose
+ -> IK Solver
+ -> Robot EE Tracking
+
+현재 완료
+- FTDI 인식 확인
+- ttyUSB 포트 확인
+- FOB 통신 성공
+- POINT 응답 확인
+- 12바이트 레코드 수신
+- POSITION/ANGLES 파서 작성
+
+다음 단계
+- 실제 좌표 검증
+- 좌표계 보정
+- Isaac Sim 연동
+- 실시간 로봇팔 추종
