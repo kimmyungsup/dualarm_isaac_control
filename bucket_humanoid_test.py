@@ -51,15 +51,17 @@ IK_ORI_GAIN = 2.0
 IK_MAX_LINEAR_ERROR = 0.12
 IK_MAX_ANGULAR_ERROR = 0.45
 
-# The SolidWorks-exported humanoid URDF in this repository has zero-width joint
-# limits and references meshes that are not present in the folder.  The runtime
-# Isaac-ready copy expands the limits and redirects missing meshes to one of the
-# placeholder STL files below so import and kinematic tests can proceed.
+# The SolidWorks-exported humanoid URDF may have zero-width joint limits or
+# package:// mesh paths that need to be rewritten for Isaac's importer.  Some
+# development checkouts only contain placeholder STLs while full robot checkouts
+# contain per-link meshes such as base_link.STL/link1_L.STL.  The runtime
+# Isaac-ready copy preserves matching meshes and only falls back when a referenced
+# mesh is genuinely absent.
 DEFAULT_LOWER_LIMIT = -math.pi
 DEFAULT_UPPER_LIMIT = math.pi
 DEFAULT_EFFORT = 250.0
 DEFAULT_VELOCITY = 2.0
-FALLBACK_MESHES = ("base.STL", "link1.STL", "link14.STL")
+FALLBACK_MESHES = ("base_link.STL", "base.STL", "link1_L.STL", "link1.STL", "link14.STL")
 
 
 # -----------------------------------------------------------------------------
@@ -208,20 +210,26 @@ def ensure_isaac_ready_urdf() -> Path:
 
     tree = ET.parse(SOURCE_URDF_PATH)
     root = tree.getroot()
-    available_meshes = {p.name for p in MESH_DIR.glob("*.STL")}
-    fallback_mesh = next((name for name in FALLBACK_MESHES if name in available_meshes), None)
-    if fallback_mesh is None:
-        raise FileNotFoundError(f"No fallback STL mesh found in {MESH_DIR}")
+    available_mesh_paths = {p.name: p.resolve() for p in MESH_DIR.glob("*.STL")}
+    if not available_mesh_paths:
+        raise FileNotFoundError(f"No STL mesh files found in {MESH_DIR}")
+    fallback_mesh_path = next(
+        (available_mesh_paths[name] for name in FALLBACK_MESHES if name in available_mesh_paths),
+        next(iter(available_mesh_paths.values())),
+    )
 
     mesh_redirects = 0
+    mesh_rewrites = 0
     for mesh in root.findall(".//mesh"):
         filename = mesh.attrib.get("filename", "")
         mesh_name = Path(filename).name
-        if mesh_name not in available_meshes:
-            mesh.attrib["filename"] = str((MESH_DIR / fallback_mesh).resolve())
+        mesh_path = available_mesh_paths.get(mesh_name)
+        if mesh_path is None:
+            mesh.attrib["filename"] = str(fallback_mesh_path)
             mesh_redirects += 1
-        elif filename.startswith("package://"):
-            mesh.attrib["filename"] = str((MESH_DIR / mesh_name).resolve())
+        elif filename.startswith("package://") or not Path(filename).is_absolute():
+            mesh.attrib["filename"] = str(mesh_path)
+            mesh_rewrites += 1
 
     widened_limits = 0
     for joint in root.findall("joint"):
@@ -246,7 +254,8 @@ def ensure_isaac_ready_urdf() -> Path:
     tree.write(ISAAC_READY_URDF_PATH, encoding="utf-8", xml_declaration=True)
     print(
         f"[URDF] wrote Isaac-ready copy: {ISAAC_READY_URDF_PATH}\n"
-        f"       widened_limits={widened_limits}, redirected_missing_meshes={mesh_redirects}"
+        f"       widened_limits={widened_limits}, rewritten_mesh_paths={mesh_rewrites}, "
+        f"redirected_missing_meshes={mesh_redirects}"
     )
     return ISAAC_READY_URDF_PATH
 
