@@ -1,0 +1,16 @@
+# Isaac Sim 5.1.0.0 runtime requirements for bucket_humanoid_test.py
+#
+# Notes:
+# - Isaac Sim 5.1 pip packages require Python 3.11.
+# - NVIDIA wheels are resolved from the NVIDIA Python package index below.
+# - If installing Isaac Sim with pip, accept the Omniverse/Isaac EULA before
+#   running the script, for example:
+#     export OMNI_KIT_ACCEPT_EULA=YES
+# - The script can also be run from an existing Isaac Sim 5.1.0.0 installation
+#   via Isaac Sim's bundled python.sh; in that case this file is mainly a record
+#   of the expected Python package baseline.
+
+--extra-index-url https://pypi.nvidia.com
+
+isaacsim[all,extscache]==5.1.0.0
+numpy
