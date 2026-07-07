@@ -1,0 +1,644 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<robot name="combined_mobile_humanoid">
+  <link name="world_x180_root"/>
+  <joint name="world_x180_to_combined_world_base_fixed" type="fixed">
+    <parent link="world_x180_root"/>
+    <child link="combined_world_base"/>
+    <origin xyz="0 0 0" rpy="3.14159265359 0 0"/>
+  </joint>
+  <link name="combined_world_base"/>
+  <link name="base_mobile">
+    <inertial>
+      <origin xyz="-0.029734 4.7404E-06 -0.49328" rpy="0 0 0"/>
+      <mass value="770.04"/>
+      <inertia ixx="44.031" ixy="-0.0029331" ixz="-4.071E-10" iyy="144.4" iyz="1.043E-05" izz="134.59"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="3.14159265359 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/base_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="3.14159265359 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/base_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body1_mobile">
+    <inertial>
+      <origin xyz="0.0017346 0.24458 0.14075" rpy="0 0 0"/>
+      <mass value="155.24"/>
+      <inertia ixx="103.89" ixy="-8.8363E-15" ixz="0.00012602" iyy="101.24" iyz="-2.3877" izz="6.1346"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body1_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body1_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body2_mobile">
+    <inertial>
+      <origin xyz="-2.0228E-13 -0.095664 1.8318" rpy="0 0 0"/>
+      <mass value="43.419"/>
+      <inertia ixx="24.458" ixy="-7.6949E-17" ixz="-8.9897E-14" iyy="24.396" iyz="-0.0028657" izz="0.50893"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body2_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body2_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body3_mobile">
+    <inertial>
+      <origin xyz="-0.257562906512611 0.0416042660645409 3.16481912527587E-13" rpy="0 0 0"/>
+      <mass value="29.1600336472618"/>
+      <inertia ixx="3.27987912830083" ixy="0.024122753378786" ixz="1.21786162209115E-17" iyy="0.591373123584008" iyz="-1.87045743115935E-18" izz="3.73858991924119"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body3_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body3_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body4_mobile">
+    <inertial>
+      <origin xyz="3.46281331755033 -0.0675991274887173 -0.000158391344936916" rpy="0 0 0"/>
+      <mass value="109.07285027416"/>
+      <inertia ixx="2.72864804555609" ixy="0.010753184530907" ixz="9.5066271913632E-05" iyy="327.684154741602" iyz="-1.12246217710802E-06" izz="328.632979625957"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body4_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body4_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body5_mobile">
+    <inertial>
+      <origin xyz="0.128160580269422 -0.0467069527336996 2.46807734871604E-15" rpy="0 0 0"/>
+      <mass value="1.59541005070581"/>
+      <inertia ixx="0.0217462102376676" ixy="-0.00130681251880065" ixz="-3.28890410956385E-18" iyy="0.00926234598382728" iyz="1.1796241215884E-19" izz="0.0309819660539831"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body5_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body5_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body6_mobile">
+    <inertial>
+      <origin xyz="0.89637194364498 0.00432299706104544 1.00968826197784E-15" rpy="0 0 0"/>
+      <mass value="6.29959038280337"/>
+      <inertia ixx="0.0314600318769282" ixy="-0.000119133325305261" ixz="1.77667721499361E-15" iyy="0.846469015877942" iyz="-1.16698166481591E-17" izz="0.846602876941725"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body6_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body6_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body7_mobile">
+    <inertial>
+      <origin xyz="4.2327463974723E-05 -0.148498627040513 -0.132884058752502" rpy="0 0 0"/>
+      <mass value="3.19458463723707"/>
+      <inertia ixx="0.0266228592880333" ixy="2.61720788127551E-06" ixz="2.76551377919451E-05" iyy="0.0217649970327056" iyz="0.00431418725685377" izz="0.0177594693280646"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body7_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body7_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="body8_mobile">
+    <inertial>
+      <origin xyz="7.35495733425597E-05 -0.11034551663069 0.189790385815516" rpy="0 0 0"/>
+      <mass value="3.10804416652657"/>
+      <inertia ixx="0.0222321405156742" ixy="-4.42334573878136E-09" ixz="1.41671735044325E-16" iyy="0.103723387347221" iyz="1.58948814888947E-05" izz="0.0953099221755763"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body8_mobile.STL"/>
+      </geometry>
+      <material name="mobile_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/body8_mobile.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint1_mobile" type="revolute">
+    <origin xyz="0 -0.146 0" rpy="0 -1.5708 0"/>
+    <parent link="base_mobile"/>
+    <child link="body1_mobile"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint2_mobile" type="revolute">
+    <origin xyz="0 0.71467 1.4217" rpy="-3.0631 0 -3.1416"/>
+    <parent link="body1_mobile"/>
+    <child link="body2_mobile"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint3_mobile" type="revolute">
+    <origin xyz="0 -3.0827E-05 3.6492" rpy="-1.5708 1.4923 -1.5708"/>
+    <parent link="body2_mobile"/>
+    <child link="body3_mobile"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint4_mobile" type="revolute">
+    <origin xyz="-0.32402 0.67267 0" rpy="0 0 -0.063879"/>
+    <parent link="body3_mobile"/>
+    <child link="body4_mobile"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint5_mobile" type="revolute">
+    <origin xyz="7.4983 0.033857 0" rpy="0 0 0.16947"/>
+    <parent link="body4_mobile"/>
+    <child link="body5_mobile"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint6_mobile" type="revolute">
+    <origin xyz="0.20463 0.14401 0" rpy="0 0 -0.79343"/>
+    <parent link="body5_mobile"/>
+    <child link="body6_mobile"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint7_mobile" type="revolute">
+    <origin xyz="1.72 -0.019163 0" rpy="2.7295 1.5708 0"/>
+    <parent link="body6_mobile"/>
+    <child link="body7_mobile"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <joint name="joint8_mobile" type="revolute">
+    <origin xyz="0 -0.25367 0.01" rpy="1.5708 0 0"/>
+    <parent link="body7_mobile"/>
+    <child link="body8_mobile"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0" upper="0" effort="0" velocity="0"/>
+  </joint>
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.00716573756770271 -2.9099431077762E-05 -0.415011659932207" rpy="0 0 0"/>
+      <mass value="70.682775791409"/>
+      <inertia ixx="5.13010017981533" ixy="-0.000141354477973953" ixz="0.0124975847017774" iyy="5.01300695006683" iyz="-1.09132728215643E-05" izz="1.10892228914382"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/base_link.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/base_link.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link1_L">
+    <inertial>
+      <origin xyz="-0.069974 -9.9558E-15 -9.8317E-08" rpy="0 0 0"/>
+      <mass value="2.1647"/>
+      <inertia ixx="0.009558" ixy="1.0616E-17" ixz="-6.4714E-09" iyy="0.0085219" iyz="-7.8978E-08" izz="0.009611"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link1_L.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.79216 0.81961 0.93333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link1_L.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link2_L">
+    <inertial>
+      <origin xyz="-8.52176612942124E-07 -0.00923313662940145 0.087721274166973" rpy="0 0 0"/>
+      <mass value="6.41556238455926"/>
+      <inertia ixx="0.0189047137914835" ixy="7.03319326333033E-07" ixz="2.96179875088153E-07" iyy="0.0219613092391982" iyz="-5.93929218982922E-05" izz="0.0221211000793166"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link2_L.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link2_L.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link3_L">
+    <inertial>
+      <origin xyz="0.00146051545076792 -0.00224108091942369 0.0756324792071881" rpy="0 0 0"/>
+      <mass value="2.23914669678434"/>
+      <inertia ixx="0.0125636087347409" ixy="3.92949465076981E-05" ixz="5.92768065432416E-05" iyy="0.0191517678991212" iyz="0.000592673626123706" izz="0.0172089468264743"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link3_L.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link3_L.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link4_L">
+    <inertial>
+      <origin xyz="0.00249933527446095 0.0303551779121173 0.119720716192579" rpy="0 0 0"/>
+      <mass value="8.95470558094895"/>
+      <inertia ixx="0.0648784215418725" ixy="9.69863129300788E-05" ixz="0.00020872650898827" iyy="0.0610715466776653" iyz="0.00492202866325739" izz="0.0284843315488824"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link4_L.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link4_L.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link5_L">
+    <inertial>
+      <origin xyz="4.44425177388574E-09 -7.61522507275458E-08 -0.0595122507878516" rpy="0 0 0"/>
+      <mass value="0.422768403685522"/>
+      <inertia ixx="0.00162753776815377" ixy="-2.11752864575193E-09" ixz="2.47959252826835E-11" iyy="0.00080181103924984" iyz="-5.56167985673417E-10" izz="0.00152360991291063"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link5_L.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link5_L.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link6_L">
+    <inertial>
+      <origin xyz="-0.0014045263258854 -0.00170749587709312 0.0459800919982942" rpy="0 0 0"/>
+      <mass value="1.25667250705436"/>
+      <inertia ixx="0.00136574345337923" ixy="4.60292478446895E-07" ixz="-3.39294259308594E-07" iyy="0.00136265761221974" iyz="8.73421335695054E-07" izz="0.00105796554285555"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link6_L.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link6_L.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link1_R">
+    <inertial>
+      <origin xyz="-0.0699738310116565 -8.53848646211173E-15 -9.83169839936003E-08" rpy="0 0 0"/>
+      <mass value="2.16473282696776"/>
+      <inertia ixx="0.00955796112462998" ixy="2.22909044458134E-17" ixz="-6.47138395513971E-09" iyy="0.00852189765023734" iyz="-7.89777222513784E-08" izz="0.00961099140955953"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link1_R.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link1_R.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link2_R">
+    <inertial>
+      <origin xyz="-8.52176813059824E-07 -0.00923313662923845 0.0877212741650941" rpy="0 0 0"/>
+      <mass value="6.41556238466694"/>
+      <inertia ixx="0.0189047137918427" ixy="7.03319425028731E-07" ixz="2.96179841776782E-07" iyy="0.0219613092394602" iyz="-5.93929217885607E-05" izz="0.0221211000795042"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link2_R.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link2_R.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link3_R">
+    <inertial>
+      <origin xyz="0.00146051545076814 -0.00224108091942816 0.0756324792071895" rpy="0 0 0"/>
+      <mass value="2.23914669678434"/>
+      <inertia ixx="0.0125636087347409" ixy="3.92949465076942E-05" ixz="5.9276806543247E-05" iyy="0.0191517678991212" iyz="0.00059267362612371" izz="0.0172089468264743"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link3_R.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link3_R.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link4_R">
+    <inertial>
+      <origin xyz="0.00249934364492849 0.0303551695897074 0.1197207350621" rpy="0 0 0"/>
+      <mass value="8.95470259701728"/>
+      <inertia ixx="0.0648784140839056" ixy="9.69793920833666E-05" ixz="0.000208718611013852" iyy="0.0610715315707127" iyz="0.00492203379977566" izz="0.028484329352906"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link4_R.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link4_R.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link5_R">
+    <inertial>
+      <origin xyz="4.4442441966136E-09 -7.61522512271462E-08 -0.0595122507878513" rpy="0 0 0"/>
+      <mass value="0.422768403685522"/>
+      <inertia ixx="0.00162753776815377" ixy="-2.11752864531502E-09" ixz="2.47959255738915E-11" iyy="0.00080181103924984" iyz="-5.56167986023631E-10" izz="0.00152360991291062"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link5_R.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link5_R.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link6_R">
+    <inertial>
+      <origin xyz="-0.00170452632610696 -0.00140749587648419 -0.0460199080035851" rpy="0 0 0"/>
+      <mass value="1.25667250710581"/>
+      <inertia ixx="0.00136574345341931" ixy="4.60292487631211E-07" ixz="-3.39294262307682E-07" iyy="0.00136265761222389" iyz="8.73421340527192E-07" izz="0.00105796554289399"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link6_R.STL"/>
+      </geometry>
+      <material name="humanoid_material_0">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="/home/lflame/Desktop/bucket_robot/humanoid_urdf_assemble/meshes/link6_R.STL"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint1_L" type="revolute">
+    <origin xyz="0 0 0.2193" rpy="1.5708 1.5708 0"/>
+    <parent link="base_link"/>
+    <child link="link1_L"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint2_L" type="revolute">
+    <origin xyz="-0.13 0 0" rpy="-3.1416 0 0"/>
+    <parent link="link1_L"/>
+    <child link="link2_L"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint3_L" type="revolute">
+    <origin xyz="0 -0.01 0.3365" rpy="0 0 0"/>
+    <parent link="link2_L"/>
+    <child link="link3_L"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint4_L" type="revolute">
+    <origin xyz="0 -0.04 0.1635" rpy="0 0 0"/>
+    <parent link="link3_L"/>
+    <child link="link4_L"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint5_L" type="revolute">
+    <origin xyz="0.0007 0.040214 0.31458" rpy="3.1416 0 -1.5708"/>
+    <parent link="link4_L"/>
+    <child link="link5_L"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint6_L" type="revolute">
+    <origin xyz="0 0 -0.09342" rpy="-3.1416 0 0"/>
+    <parent link="link5_L"/>
+    <child link="link6_L"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint1_R" type="revolute">
+    <origin xyz="0 0 -0.2193" rpy="1.5708 -1.5708 0"/>
+    <parent link="base_link"/>
+    <child link="link1_R"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint2_R" type="revolute">
+    <origin xyz="-0.13 0 0" rpy="3.1416 0 3.1416"/>
+    <parent link="link1_R"/>
+    <child link="link2_R"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint3_R" type="revolute">
+    <origin xyz="0 -0.01 0.3365" rpy="0 0 0"/>
+    <parent link="link2_R"/>
+    <child link="link3_R"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint4_R" type="revolute">
+    <origin xyz="0 -0.04 0.1635" rpy="0 0 0"/>
+    <parent link="link3_R"/>
+    <child link="link4_R"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint5_R" type="revolute">
+    <origin xyz="0.0007 0.040214 0.31458" rpy="3.1416 0 -1.5708"/>
+    <parent link="link4_R"/>
+    <child link="link5_R"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="joint6_R" type="revolute">
+    <origin xyz="0 0 -0.09342" rpy="0 0 -1.5708"/>
+    <parent link="link5_R"/>
+    <child link="link6_R"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793" effort="250.0" velocity="2.0"/>
+  </joint>
+  <joint name="combined_world_to_mobile_base_fixed" type="fixed">
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 0"/>
+    <parent link="combined_world_base"/>
+    <child link="base_mobile"/>
+  </joint>
+  <joint name="mobile_body8_to_humanoid_base_fixed" type="fixed">
+    <origin xyz="0 -0.3 0" rpy="-1.57079632679 0 -1.57079632679"/>
+    <parent link="body8_mobile"/>
+    <child link="base_link"/>
+  </joint>
+</robot>
