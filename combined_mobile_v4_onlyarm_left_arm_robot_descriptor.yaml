@@ -1,0 +1,33 @@
+api_version: 1.0
+
+cspace:
+    - joint8
+    - joint9
+    - joint10
+    - joint11
+    - joint12
+    - joint13
+    - joint14
+default_q: [-0.3361, -0.0, -0.1551, -0.365, -0.0, -0.0, -0.0]
+
+acceleration_limits: [10, 10, 10, 10, 10, 10, 10]
+jerk_limits: [10000, 10000, 10000, 10000, 10000, 10000, 10000]
+
+cspace_to_urdf_rules:
+    - {name: joint1_mobile, rule: fixed, value: 0.0}
+    - {name: joint2_mobile, rule: fixed, value: 0.0}
+    - {name: joint3_mobile, rule: fixed, value: 0.0}
+    - {name: joint4_mobile, rule: fixed, value: 0.0}
+    - {name: joint5_mobile, rule: fixed, value: 0.0}
+    - {name: joint6_mobile, rule: fixed, value: 0.0}
+    - {name: joint7_mobile, rule: fixed, value: 0.0}
+    - {name: joint8_mobile, rule: fixed, value: 0.0}
+    - {name: joint1, rule: fixed, value: 0.3112}
+    - {name: joint2, rule: fixed, value: 0.0}
+    - {name: joint3, rule: fixed, value: -0.0001}
+    - {name: joint4, rule: fixed, value: 0.4313}
+    - {name: joint5, rule: fixed, value: -0.0}
+    - {name: joint6, rule: fixed, value: 0.0}
+    - {name: joint7, rule: fixed, value: 0.0}
+
+collision_spheres:
