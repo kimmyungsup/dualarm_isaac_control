@@ -47,6 +47,9 @@ MIN_ALIGN_TO_ENABLE = 0.35
 MIN_RESPONSE_NORM = 0.0015
 MAX_DELTA_PER_STEP = 0.2
 MAX_TARGET_OFFSET_FROM_START = np.array([0.60, 0.60, 0.60], dtype=np.float64)
+MOBILE_JOINT_LOWER_RAD = -np.pi
+MOBILE_JOINT_UPPER_RAD = np.pi
+MOBILE_JOINT_MAX_FORCE = 500.0
 MOBILE_JOINT_NAMES = [f"joint{i}_mobile" for i in range(1, 9)]
 MOBILE_JOINT_KEY_BINDINGS = [
     ("Q", "A"),
@@ -226,6 +229,38 @@ def find_prim_by_name(stage, prim_name: str):
     raise RuntimeError(f"Prim named '{prim_name}' not found in opened USD stage")
 
 
+def configure_mobile_joint_usd_limits(stage) -> None:
+    """Relax mobile joint limits/drives in the loaded USD so targets can move immediately."""
+    from pxr import UsdPhysics
+
+    configured = 0
+    for prim in iter_world_prims(stage):
+        if prim.GetName() not in MOBILE_JOINT_NAMES:
+            continue
+        if prim.HasAPI(UsdPhysics.RevoluteJoint):
+            joint = UsdPhysics.RevoluteJoint(prim)
+        else:
+            joint = UsdPhysics.RevoluteJoint.Apply(prim)
+        joint.CreateLowerLimitAttr(MOBILE_JOINT_LOWER_RAD).Set(MOBILE_JOINT_LOWER_RAD)
+        joint.CreateUpperLimitAttr(MOBILE_JOINT_UPPER_RAD).Set(MOBILE_JOINT_UPPER_RAD)
+        try:
+            drive = UsdPhysics.DriveAPI.Get(prim, "angular")
+            if not drive:
+                drive = UsdPhysics.DriveAPI.Apply(prim, "angular")
+            drive.CreateMaxForceAttr(MOBILE_JOINT_MAX_FORCE).Set(MOBILE_JOINT_MAX_FORCE)
+        except Exception as exc:
+            print(f"[WARN] Could not configure angular drive force for {prim.GetPath()}: {exc}")
+        configured += 1
+
+    if configured:
+        print(
+            f"[INFO] Mobile USD joint limits configured for {configured} joints: "
+            f"lower={MOBILE_JOINT_LOWER_RAD:.3f}, upper={MOBILE_JOINT_UPPER_RAD:.3f}, max_force={MOBILE_JOINT_MAX_FORCE:.1f}"
+        )
+    else:
+        print("[WARN] No mobile joint prims found while configuring USD joint limits")
+
+
 def select_articulation_root_path(stage, preferred_root_link: str) -> str:
     """Select an existing ArticulationRootAPI prim without mutating the authored USD hierarchy."""
     from pxr import UsdPhysics
@@ -373,6 +408,7 @@ def main(robot_key: str) -> None:
     open_stage(cfg["stage_path"])
     stage = get_current_stage()
     robot_prim_path = select_articulation_root_path(stage, cfg["articulation_root_link"])
+    configure_mobile_joint_usd_limits(stage)
     if DISABLE_GRAVITY:
         disable_robot_gravity(stage, robot_prim_path)
 
