@@ -274,27 +274,27 @@ def find_articulation_prim_path(stage, preferred_path: str) -> str:
 
 
 def disable_robot_gravity(world: World, robot_prim_path: str) -> None:
-    from pxr import Usd, UsdPhysics
+    """Disable gravity by authoring PhysX USD attributes, without creating RigidPrimView objects."""
+    from pxr import Usd, UsdPhysics, PhysxSchema
+
     root = world.stage.GetPrimAtPath(robot_prim_path)
     if not root or not root.IsValid():
         raise RuntimeError(f"Robot prim path not found: {robot_prim_path}")
-    rigid_paths = [str(prim.GetPath()) for prim in Usd.PrimRange(root) if prim.HasAPI(UsdPhysics.RigidBodyAPI)]
-    if not rigid_paths:
+
+    rigid_count = 0
+    for prim in Usd.PrimRange(root):
+        if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            continue
+        physx_rigid = PhysxSchema.PhysxRigidBodyAPI(prim)
+        if not physx_rigid:
+            physx_rigid = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+        physx_rigid.CreateDisableGravityAttr(True).Set(True)
+        rigid_count += 1
+
+    if rigid_count == 0:
         print(f"[WARN] No rigid bodies found under {robot_prim_path}; gravity disable skipped")
         return
-    try:
-        from isaacsim.core.prims import RigidPrimView
-    except Exception:
-        from omni.isaac.core.prims import RigidPrimView
-    views = []
-    for i, path in enumerate(rigid_paths):
-        view = RigidPrimView(prim_paths_expr=path, name=f"robot_rigid_view_{i}", reset_xform_properties=False)
-        world.scene.add(view)
-        views.append(view)
-    world.reset()
-    for view in views:
-        view.disable_gravities()
-    print(f"[INFO] Gravity disabled for {len(rigid_paths)} rigid bodies under {robot_prim_path}")
+    print(f"[INFO] Gravity disabled for {rigid_count} rigid bodies under {robot_prim_path}")
 
 
 @dataclass
