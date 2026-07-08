@@ -298,6 +298,41 @@ def disable_robot_gravity(stage_or_world, robot_prim_path: str) -> None:
     print(f"[INFO] Gravity disabled for {rigid_count} rigid bodies under {robot_prim_path}")
 
 
+def articulation_is_ready(robot) -> bool:
+    if hasattr(robot, "is_initialized"):
+        try:
+            if not robot.is_initialized():
+                return False
+        except Exception:
+            pass
+    try:
+        joint_positions = robot.get_joint_positions()
+    except Exception:
+        return False
+    return joint_positions is not None
+
+
+def wait_for_articulation_ready(world: World, robot, max_steps: int = 180) -> None:
+    for _ in range(max_steps):
+        if articulation_is_ready(robot):
+            return
+        if hasattr(robot, "initialize"):
+            try:
+                robot.initialize()
+            except Exception:
+                pass
+        world.step(render=False)
+    raise RuntimeError("Robot articulation did not initialize; check the USD ArticulationRootAPI and robot prim path.")
+
+
+def safe_apply_action(controller, action, fallback_action=None) -> bool:
+    selected_action = action if action is not None else fallback_action
+    if selected_action is None or selected_action.joint_positions is None:
+        return False
+    controller.apply_action(selected_action)
+    return True
+
+
 @dataclass
 class ArmState:
     name: str
@@ -328,6 +363,7 @@ def main(robot_key: str) -> None:
     robot = Articulation(robot_prim_path)
     world.scene.add(robot)
     world.reset()
+    wait_for_articulation_ready(world, robot)
 
     controller = robot.get_articulation_controller()
     if hasattr(controller, "set_gains"):
@@ -337,10 +373,12 @@ def main(robot_key: str) -> None:
             print(f"[WARN] controller.set_gains skipped because the articulation physics view is not ready: {exc}")
 
     jp0 = robot.get_joint_positions()
+    if jp0 is None:
+        raise RuntimeError("Robot articulation initialized but returned no joint positions.")
     hold_action = ArticulationAction(joint_positions=jp0, joint_velocities=np.zeros_like(jp0))
     dt = 1.0 / 60.0
     for _ in range(int(max(0.0, HOLD_SECONDS) / dt)):
-        controller.apply_action(hold_action)
+        safe_apply_action(controller, hold_action)
         world.step(render=False)
 
     right_kin = LulaKinematicsSolver(robot_description_path=cfg["right_desc_yaml"], urdf_path=cfg["urdf_path"])
@@ -409,7 +447,7 @@ def main(robot_key: str) -> None:
             refresh_base_pose()
             action, ok = arm.ik.compute_inverse_kinematics(goal_pos, goal_quat)
             ok_last = ok
-            controller.apply_action(action if ok else hold_action)
+            safe_apply_action(controller, action if ok else None, hold_action)
             world.step(render=False)
         return ok_last
 
@@ -540,7 +578,7 @@ def main(robot_key: str) -> None:
                 for i, (plus_key, minus_key) in enumerate(MOBILE_JOINT_KEY_BINDINGS[:len(mobile_joint_targets)]):
                     direction = is_down(key_name_to_input[plus_key]) - is_down(key_name_to_input[minus_key])
                     mobile_joint_targets[i] += direction * mobile_step
-                controller.apply_action(make_mobile_joint_action(mobile_joint_indices, mobile_joint_targets))
+                safe_apply_action(controller, make_mobile_joint_action(mobile_joint_indices, mobile_joint_targets))
 
             if log_counter % 60 == 0:
                 if len(mobile_joint_targets) > 0:
@@ -603,7 +641,7 @@ def main(robot_key: str) -> None:
         for target_arm in control_arms:
             action, arm_ok = target_arm.ik.compute_inverse_kinematics(target_arm.target_pos, target_arm.target_quat)
             ok = ok and arm_ok
-            controller.apply_action(action if arm_ok else hold_action)
+            safe_apply_action(controller, action if arm_ok else None, hold_action)
 
         if log_counter % 60 == 0:
             arm = arms[active_arm]
