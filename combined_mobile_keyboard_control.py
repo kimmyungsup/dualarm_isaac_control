@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 import argparse
+import importlib
 import os
 import numpy as np
 
@@ -206,6 +207,41 @@ def set_ik_iters(kin, iters: int):
         kin.ccd_max_iterations = iters
 
 
+def acquire_urdf_module():
+    """Return the URDF importer module across Isaac Sim extension naming variants."""
+    extension_names = [
+        "isaacsim.asset.importer.urdf",
+        "omni.importer.urdf",
+        "omni.isaac.urdf",
+    ]
+    try:
+        from isaacsim.core.utils.extensions import enable_extension
+    except Exception:
+        enable_extension = None
+
+    last_error = None
+    for extension_name in extension_names:
+        if enable_extension is not None:
+            try:
+                enable_extension(extension_name)
+            except Exception as exc:
+                last_error = exc
+        try:
+            return importlib.import_module(f"{extension_name}._urdf")
+        except ModuleNotFoundError as exc:
+            last_error = exc
+
+    raise ModuleNotFoundError(
+        "Could not import an Isaac Sim URDF importer module. Tried: "
+        + ", ".join(f"{name}._urdf" for name in extension_names)
+    ) from last_error
+
+
+def set_import_config_value(import_config, name: str, value) -> None:
+    if hasattr(import_config, name):
+        setattr(import_config, name, value)
+
+
 def import_urdf_if_needed(world: World, urdf_path: str, robot_prim_path: str) -> None:
     """Import the URDF under robot_prim_path when light_ware5.usd does not contain it."""
     stage = world.stage
@@ -215,27 +251,32 @@ def import_urdf_if_needed(world: World, urdf_path: str, robot_prim_path: str) ->
         return
 
     import omni.kit.commands
-    from omni.importer.urdf import _urdf
 
+    _urdf = acquire_urdf_module()
     urdf_path = os.path.abspath(urdf_path)
     print(f"[INFO] Importing URDF: {urdf_path} -> {robot_prim_path}")
     import_config = _urdf.ImportConfig()
-    import_config.merge_fixed_joints = False
-    import_config.convex_decomp = False
-    import_config.import_inertia_tensor = True
-    import_config.fix_base = True
-    import_config.make_default_prim = False
-    import_config.create_physics_scene = False
-    import_config.default_drive_strength = KP
-    import_config.default_position_drive_damping = KD
-    import_config.default_drive_type = _urdf.UrdfJointTargetType.JOINT_DRIVE_POSITION
+    set_import_config_value(import_config, "merge_fixed_joints", False)
+    set_import_config_value(import_config, "convex_decomp", False)
+    set_import_config_value(import_config, "import_inertia_tensor", True)
+    set_import_config_value(import_config, "fix_base", True)
+    set_import_config_value(import_config, "make_default_prim", False)
+    set_import_config_value(import_config, "create_physics_scene", False)
+    set_import_config_value(import_config, "default_drive_strength", KP)
+    set_import_config_value(import_config, "default_position_drive_damping", KD)
+    if hasattr(_urdf, "UrdfJointTargetType"):
+        set_import_config_value(import_config, "default_drive_type", _urdf.UrdfJointTargetType.JOINT_DRIVE_POSITION)
 
-    ok, imported_path = omni.kit.commands.execute(
-        "URDFParseAndImportFile",
-        urdf_path=urdf_path,
-        import_config=import_config,
-        dest_path=robot_prim_path,
-    )
+    command_kwargs = {"urdf_path": urdf_path, "import_config": import_config, "dest_path": robot_prim_path}
+    try:
+        ok, imported_path = omni.kit.commands.execute("URDFParseAndImportFile", **command_kwargs)
+    except Exception as exc:
+        print(f"[WARN] URDF import with dest_path failed, retrying with default importer path: {exc}")
+        ok, imported_path = False, None
+    if not ok:
+        command_kwargs.pop("dest_path", None)
+        command_kwargs["get_articulation_root"] = True
+        ok, imported_path = omni.kit.commands.execute("URDFParseAndImportFile", **command_kwargs)
     if not ok:
         raise RuntimeError(f"URDF import failed: {urdf_path}")
     print(f"[INFO] URDF imported at: {imported_path}")
