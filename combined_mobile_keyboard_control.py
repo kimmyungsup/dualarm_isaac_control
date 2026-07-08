@@ -237,10 +237,10 @@ def configure_mobile_joint_usd_limits(stage) -> None:
     for prim in iter_world_prims(stage):
         if prim.GetName() not in MOBILE_JOINT_NAMES:
             continue
-        if prim.HasAPI(UsdPhysics.RevoluteJoint):
-            joint = UsdPhysics.RevoluteJoint(prim)
-        else:
-            joint = UsdPhysics.RevoluteJoint.Apply(prim)
+        if not prim.IsA(UsdPhysics.RevoluteJoint):
+            print(f"[WARN] Mobile joint prim is not a UsdPhysics.RevoluteJoint; limit update skipped: {prim.GetPath()}")
+            continue
+        joint = UsdPhysics.RevoluteJoint(prim)
         joint.CreateLowerLimitAttr(MOBILE_JOINT_LOWER_RAD).Set(MOBILE_JOINT_LOWER_RAD)
         joint.CreateUpperLimitAttr(MOBILE_JOINT_UPPER_RAD).Set(MOBILE_JOINT_UPPER_RAD)
         try:
