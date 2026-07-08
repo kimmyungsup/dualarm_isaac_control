@@ -19,7 +19,7 @@ simulation_app = SimulationApp({"headless": False})
 
 import carb
 from isaacsim.core.api import World
-from isaacsim.core.utils.stage import open_stage
+from isaacsim.core.utils.stage import get_current_stage, open_stage
 from omni.isaac.core.utils.types import ArticulationAction
 
 try:
@@ -273,11 +273,12 @@ def find_articulation_prim_path(stage, preferred_path: str) -> str:
     raise RuntimeError(f"Robot prim path not found and no articulation root discovered in stage: {preferred_path}")
 
 
-def disable_robot_gravity(world: World, robot_prim_path: str) -> None:
+def disable_robot_gravity(stage_or_world, robot_prim_path: str) -> None:
     """Disable gravity by authoring PhysX USD attributes, without creating RigidPrimView objects."""
     from pxr import Usd, UsdPhysics, PhysxSchema
 
-    root = world.stage.GetPrimAtPath(robot_prim_path)
+    stage = stage_or_world.stage if hasattr(stage_or_world, "stage") else stage_or_world
+    root = stage.GetPrimAtPath(robot_prim_path)
     if not root or not root.IsValid():
         raise RuntimeError(f"Robot prim path not found: {robot_prim_path}")
 
@@ -317,20 +318,23 @@ def main(robot_key: str) -> None:
     cfg = ROBOT_CONFIGS[robot_key]
 
     open_stage(cfg["stage_path"])
+    stage = get_current_stage()
+    robot_prim_path = configure_single_articulation_root(stage, cfg["articulation_root_link"])
+    if DISABLE_GRAVITY:
+        disable_robot_gravity(stage, robot_prim_path)
+
     world = World()
     world.scene.add_default_ground_plane()
-    robot_prim_path = configure_single_articulation_root(world.stage, cfg["articulation_root_link"])
-
     robot = Articulation(robot_prim_path)
     world.scene.add(robot)
     world.reset()
 
-    if DISABLE_GRAVITY:
-        disable_robot_gravity(world, robot_prim_path)
-
     controller = robot.get_articulation_controller()
     if hasattr(controller, "set_gains"):
-        controller.set_gains(np.ones(robot.num_dof) * KP, np.ones(robot.num_dof) * KD)
+        try:
+            controller.set_gains(np.ones(robot.num_dof) * KP, np.ones(robot.num_dof) * KD)
+        except Exception as exc:
+            print(f"[WARN] controller.set_gains skipped because the articulation physics view is not ready: {exc}")
 
     jp0 = robot.get_joint_positions()
     hold_action = ArticulationAction(joint_positions=jp0, joint_velocities=np.zeros_like(jp0))
