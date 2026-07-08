@@ -226,27 +226,45 @@ def find_prim_by_name(stage, prim_name: str):
     raise RuntimeError(f"Prim named '{prim_name}' not found in opened USD stage")
 
 
-def configure_single_articulation_root(stage, articulation_root_link: str) -> str:
-    """Keep one ArticulationRootAPI on articulation_root_link and remove duplicate roots."""
+def select_articulation_root_path(stage, preferred_root_link: str) -> str:
+    """Select an existing ArticulationRootAPI prim without mutating the authored USD hierarchy."""
     from pxr import UsdPhysics
 
-    target_prim = find_prim_by_name(stage, articulation_root_link)
-    target_path = str(target_prim.GetPath())
-    existing_root_paths = []
+    articulation_paths = []
+    preferred_path = None
     for prim in iter_world_prims(stage):
+        if prim.GetName() == preferred_root_link:
+            preferred_path = str(prim.GetPath())
         if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
-            existing_root_paths.append(str(prim.GetPath()))
-            if prim != target_prim:
-                prim.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+            articulation_paths.append(str(prim.GetPath()))
 
-    if not target_prim.HasAPI(UsdPhysics.ArticulationRootAPI):
-        UsdPhysics.ArticulationRootAPI.Apply(target_prim)
+    if preferred_path in articulation_paths:
+        if len(articulation_paths) > 1:
+            print(
+                f"[WARN] Multiple articulation roots are authored in the stage: {articulation_paths}. "
+                f"Using preferred existing root: {preferred_path}"
+            )
+        else:
+            print(f"[INFO] Articulation root active: {preferred_path}")
+        return preferred_path
 
-    if existing_root_paths and existing_root_paths != [target_path]:
-        print(f"[INFO] Articulation roots normalized: existing={existing_root_paths}, active={target_path}")
-    else:
-        print(f"[INFO] Articulation root active: {target_path}")
-    return target_path
+    if len(articulation_paths) == 1:
+        print(
+            f"[WARN] Preferred articulation root link '{preferred_root_link}' is not authored as an ArticulationRootAPI. "
+            f"Using existing root: {articulation_paths[0]}"
+        )
+        return articulation_paths[0]
+
+    if len(articulation_paths) > 1:
+        raise RuntimeError(
+            f"Multiple articulation roots are authored in the stage and preferred root '{preferred_root_link}' "
+            f"is not one of them: {articulation_paths}"
+        )
+
+    raise RuntimeError(
+        f"No ArticulationRootAPI found in the opened USD stage. "
+        f"Author exactly one articulation root in USD, preferably on '{preferred_root_link}'."
+    )
 
 
 def find_articulation_prim_path(stage, preferred_path: str) -> str:
@@ -354,7 +372,7 @@ def main(robot_key: str) -> None:
 
     open_stage(cfg["stage_path"])
     stage = get_current_stage()
-    robot_prim_path = configure_single_articulation_root(stage, cfg["articulation_root_link"])
+    robot_prim_path = select_articulation_root_path(stage, cfg["articulation_root_link"])
     if DISABLE_GRAVITY:
         disable_robot_gravity(stage, robot_prim_path)
 
