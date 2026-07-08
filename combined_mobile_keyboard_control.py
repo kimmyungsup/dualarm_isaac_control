@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 import argparse
-import os
 import numpy as np
 
 from isaacsim import SimulationApp
@@ -30,7 +29,6 @@ except Exception:
 
 from isaacsim.robot_motion.motion_generation import LulaKinematicsSolver, ArticulationKinematicsSolver
 
-USD_STAGE_PATH = "./light_ware5.usd"
 EE_SPEED_MPS = 0.10
 ROT_SPEED_RPS = 0.8
 MOBILE_JOINT_SPEED_RPS = 0.5
@@ -64,6 +62,7 @@ MOBILE_JOINT_KEY_BINDINGS = [
 
 ROBOT_CONFIGS = {
     "humanoid_base": {
+        "stage_path": "./com_hum_light_test.usd",
         "urdf_path": "./humanoid_urdf_assemble/urdf/combined_mobile_humanoid_base.urdf",
         "robot_prim_path": "/World/combined_mobile_humanoid_base",
         "right_desc_yaml": "./combined_mobile_humanoid_base_right_arm_robot_descriptor.yaml",
@@ -72,6 +71,7 @@ ROBOT_CONFIGS = {
         "left_ee_frame": "link6_L",
     },
     "v4_onlyarm": {
+        "stage_path": "./com_onlyarm_light_test.usd",
         "urdf_path": "./humanoid_urdf_assemble/urdf/combined_mobile_v4_onlyarm.urdf",
         "robot_prim_path": "/World/combined_mobile_v4_onlyarm",
         "right_desc_yaml": "./combined_mobile_v4_onlyarm_right_arm_robot_descriptor.yaml",
@@ -206,39 +206,30 @@ def set_ik_iters(kin, iters: int):
         kin.ccd_max_iterations = iters
 
 
-def import_urdf_if_needed(world: World, urdf_path: str, robot_prim_path: str) -> None:
-    """Import the URDF under robot_prim_path when light_ware5.usd does not contain it."""
-    stage = world.stage
-    prim = stage.GetPrimAtPath(robot_prim_path)
-    if prim and prim.IsValid():
-        print(f"[INFO] Existing robot prim found: {robot_prim_path}")
-        return
+def find_articulation_prim_path(stage, preferred_path: str) -> str:
+    """Return preferred_path when valid, otherwise find one articulation in the opened USD stage."""
+    preferred = stage.GetPrimAtPath(preferred_path)
+    if preferred and preferred.IsValid():
+        return preferred_path
 
-    import omni.kit.commands
-    from omni.importer.urdf import _urdf
+    from pxr import Usd, UsdPhysics
 
-    urdf_path = os.path.abspath(urdf_path)
-    print(f"[INFO] Importing URDF: {urdf_path} -> {robot_prim_path}")
-    import_config = _urdf.ImportConfig()
-    import_config.merge_fixed_joints = False
-    import_config.convex_decomp = False
-    import_config.import_inertia_tensor = True
-    import_config.fix_base = True
-    import_config.make_default_prim = False
-    import_config.create_physics_scene = False
-    import_config.default_drive_strength = KP
-    import_config.default_position_drive_damping = KD
-    import_config.default_drive_type = _urdf.UrdfJointTargetType.JOINT_DRIVE_POSITION
+    articulation_paths = []
+    world = stage.GetPrimAtPath("/World")
+    search_root = world if world and world.IsValid() else stage.GetPseudoRoot()
+    for prim in Usd.PrimRange(search_root):
+        if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+            articulation_paths.append(str(prim.GetPath()))
 
-    ok, imported_path = omni.kit.commands.execute(
-        "URDFParseAndImportFile",
-        urdf_path=urdf_path,
-        import_config=import_config,
-        dest_path=robot_prim_path,
-    )
-    if not ok:
-        raise RuntimeError(f"URDF import failed: {urdf_path}")
-    print(f"[INFO] URDF imported at: {imported_path}")
+    if len(articulation_paths) == 1:
+        print(f"[WARN] Preferred robot prim not found: {preferred_path}. Using articulation root: {articulation_paths[0]}")
+        return articulation_paths[0]
+    if len(articulation_paths) > 1:
+        raise RuntimeError(
+            f"Preferred robot prim not found: {preferred_path}. "
+            f"Multiple articulation roots found; set ROBOT_CONFIGS robot_prim_path explicitly: {articulation_paths}"
+        )
+    raise RuntimeError(f"Robot prim path not found and no articulation root discovered in stage: {preferred_path}")
 
 
 def disable_robot_gravity(world: World, robot_prim_path: str) -> None:
@@ -284,17 +275,17 @@ def main(robot_key: str) -> None:
     global CONTROL_FRAME
     cfg = ROBOT_CONFIGS[robot_key]
 
-    open_stage(USD_STAGE_PATH)
+    open_stage(cfg["stage_path"])
     world = World()
     world.scene.add_default_ground_plane()
-    import_urdf_if_needed(world, cfg["urdf_path"], cfg["robot_prim_path"])
+    robot_prim_path = find_articulation_prim_path(world.stage, cfg["robot_prim_path"])
 
-    robot = Articulation(cfg["robot_prim_path"])
+    robot = Articulation(robot_prim_path)
     world.scene.add(robot)
     world.reset()
 
     if DISABLE_GRAVITY:
-        disable_robot_gravity(world, cfg["robot_prim_path"])
+        disable_robot_gravity(world, robot_prim_path)
 
     controller = robot.get_articulation_controller()
     if hasattr(controller, "set_gains"):
@@ -434,7 +425,8 @@ def main(robot_key: str) -> None:
     print("  [MOBILE] Left/Down: selected joint - | Right/Up: selected joint +")
     print("  [MOBILE] Q/A W/S E/D R/F T/G Y/H U/J I/K: joint1..joint8 +/-")
     print("  ESC: quit")
-    print(f"  ROBOT={robot_key}, MODE={control_mode}, CONTROL_FRAME={CONTROL_FRAME}, ACTIVE_ARM={active_arm}")
+    print(f"  ROBOT={robot_key}, STAGE={cfg['stage_path']}, PRIM={robot_prim_path}")
+    print(f"  MODE={control_mode}, CONTROL_FRAME={CONTROL_FRAME}, ACTIVE_ARM={active_arm}")
 
     log_counter = 0
     while simulation_app.is_running() and not should_quit:
