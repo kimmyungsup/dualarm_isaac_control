@@ -65,6 +65,7 @@ ROBOT_CONFIGS = {
         "stage_path": "./com_hum_light_test.usd",
         "urdf_path": "./humanoid_urdf_assemble/urdf/combined_mobile_humanoid_base.urdf",
         "robot_prim_path": "/World/combined_mobile_humanoid_base",
+        "articulation_root_link": "base_mobile",
         "right_desc_yaml": "./combined_mobile_humanoid_base_right_arm_robot_descriptor.yaml",
         "left_desc_yaml": "./combined_mobile_humanoid_base_left_arm_robot_descriptor.yaml",
         "right_ee_frame": "link6_R",
@@ -74,6 +75,7 @@ ROBOT_CONFIGS = {
         "stage_path": "./com_onlyarm_light_test.usd",
         "urdf_path": "./humanoid_urdf_assemble/urdf/combined_mobile_v4_onlyarm.urdf",
         "robot_prim_path": "/World/combined_mobile_v4_onlyarm",
+        "articulation_root_link": "base_mobile",
         "right_desc_yaml": "./combined_mobile_v4_onlyarm_right_arm_robot_descriptor.yaml",
         "left_desc_yaml": "./combined_mobile_v4_onlyarm_left_arm_robot_descriptor.yaml",
         "right_ee_frame": "link7",
@@ -206,18 +208,57 @@ def set_ik_iters(kin, iters: int):
         kin.ccd_max_iterations = iters
 
 
+def iter_world_prims(stage):
+    from pxr import Usd
+
+    world = stage.GetPrimAtPath("/World")
+    search_root = world if world and world.IsValid() else stage.GetPseudoRoot()
+    return Usd.PrimRange(search_root)
+
+
+def find_prim_by_name(stage, prim_name: str):
+    matches = [prim for prim in iter_world_prims(stage) if prim.GetName() == prim_name]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        paths = [str(prim.GetPath()) for prim in matches]
+        raise RuntimeError(f"Multiple prims named '{prim_name}' found: {paths}")
+    raise RuntimeError(f"Prim named '{prim_name}' not found in opened USD stage")
+
+
+def configure_single_articulation_root(stage, articulation_root_link: str) -> str:
+    """Keep one ArticulationRootAPI on articulation_root_link and remove duplicate roots."""
+    from pxr import UsdPhysics
+
+    target_prim = find_prim_by_name(stage, articulation_root_link)
+    target_path = str(target_prim.GetPath())
+    existing_root_paths = []
+    for prim in iter_world_prims(stage):
+        if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+            existing_root_paths.append(str(prim.GetPath()))
+            if prim != target_prim:
+                prim.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+
+    if not target_prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+        UsdPhysics.ArticulationRootAPI.Apply(target_prim)
+
+    if existing_root_paths and existing_root_paths != [target_path]:
+        print(f"[INFO] Articulation roots normalized: existing={existing_root_paths}, active={target_path}")
+    else:
+        print(f"[INFO] Articulation root active: {target_path}")
+    return target_path
+
+
 def find_articulation_prim_path(stage, preferred_path: str) -> str:
     """Return preferred_path when valid, otherwise find one articulation in the opened USD stage."""
     preferred = stage.GetPrimAtPath(preferred_path)
     if preferred and preferred.IsValid():
         return preferred_path
 
-    from pxr import Usd, UsdPhysics
+    from pxr import UsdPhysics
 
     articulation_paths = []
-    world = stage.GetPrimAtPath("/World")
-    search_root = world if world and world.IsValid() else stage.GetPseudoRoot()
-    for prim in Usd.PrimRange(search_root):
+    for prim in iter_world_prims(stage):
         if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
             articulation_paths.append(str(prim.GetPath()))
 
@@ -278,7 +319,7 @@ def main(robot_key: str) -> None:
     open_stage(cfg["stage_path"])
     world = World()
     world.scene.add_default_ground_plane()
-    robot_prim_path = find_articulation_prim_path(world.stage, cfg["robot_prim_path"])
+    robot_prim_path = configure_single_articulation_root(world.stage, cfg["articulation_root_link"])
 
     robot = Articulation(robot_prim_path)
     world.scene.add(robot)
