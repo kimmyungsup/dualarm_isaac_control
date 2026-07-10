@@ -34,14 +34,15 @@ from isaacsim.robot_motion.motion_generation import LulaKinematicsSolver, Articu
 EE_SPEED_MPS = 0.10
 ROT_SPEED_RPS = 0.8
 MOBILE_JOINT_SPEED_RPS = 0.5
+KEYBOARD_BASE_AXIS_SIGN = np.array([-1.0, 1.0, 1.0], dtype=np.float64)
 CONTROL_FRAME = "base"  # "base" or "tool"
 KP = 1000.0
 KD = 1200.0
 HOLD_SECONDS = 1.0
-FORCE_BASE_WXYZ_SWAP = False # True
+FORCE_BASE_WXYZ_SWAP = False  # True
 DISABLE_GRAVITY = True
 
-USE_AXIS_AUTO_ALIGN = False # True
+USE_AXIS_AUTO_ALIGN = False  # True
 ALIGN_PROBE_DIST = 0.035
 ALIGN_SETTLE_STEPS = 70
 ALIGN_RESTORE_STEPS = 70
@@ -51,7 +52,7 @@ MAX_DELTA_PER_STEP = 0.2
 MAX_TARGET_OFFSET_FROM_START = np.array([0.60, 0.60, 0.60], dtype=np.float64)
 MOBILE_JOINT_LOWER_RAD = -np.pi
 MOBILE_JOINT_UPPER_RAD = np.pi
-MOBILE_JOINT_MAX_FORCE = 500.0
+MOBILE_JOINT_MAX_FORCE = 5000.0
 MOBILE_JOINT_NAMES = [f"joint{i}_mobile" for i in range(1, 9)]
 MOBILE_JOINT_KEY_BINDINGS = [
     ("Q", "A"),
@@ -117,6 +118,25 @@ def save_kinematics_info(path: str, info: dict) -> None:
         json.dump(info, f, indent=2, sort_keys=True)
         f.write("\n")
     print(f"[INFO] Kinematics info saved: {info_path}")
+
+
+def load_mobile_calibration(info: Optional[dict], mobile_joint_count: int):
+    signs = np.ones(mobile_joint_count, dtype=np.float64)
+    scales = np.ones(mobile_joint_count, dtype=np.float64)
+    enabled = np.ones(mobile_joint_count, dtype=bool)
+    if not info:
+        return signs, scales, enabled, False
+    calib = info.get("mobile_joints", {}).get("calibration")
+    if not calib:
+        return signs, scales, enabled, False
+    saved_signs = np.asarray(calib.get("joint_sign", []), dtype=np.float64)
+    saved_scales = np.asarray(calib.get("joint_scale", []), dtype=np.float64)
+    saved_enabled = np.asarray(calib.get("joint_enabled", []), dtype=bool)
+    signs[: min(mobile_joint_count, saved_signs.size)] = saved_signs[:mobile_joint_count]
+    scales[: min(mobile_joint_count, saved_scales.size)] = saved_scales[:mobile_joint_count]
+    enabled[: min(mobile_joint_count, saved_enabled.size)] = saved_enabled[:mobile_joint_count]
+    print(f"[INFO] Loaded saved mobile calibration: sign={fmt(signs)} scale={fmt(scales)} enabled={enabled}")
+    return signs, scales, enabled, True
 
 
 def apply_saved_kinematics_to_arms(arms: dict, info: Optional[dict]) -> bool:
@@ -505,11 +525,14 @@ def main(robot_key: str) -> None:
         "left": ArmState("left", left_kin, left_ik, cfg["left_ee_frame"]),
     }
     active_arm = "right"
-    active_control_target = "right" #"both"
+    active_control_target = "right"  # "both"
     control_mode = "arm"  # "arm" or "mobile"
     active_mobile_joint = 0
     mobile_joint_indices = resolve_mobile_joint_indices(robot)
     mobile_joint_targets = robot.get_joint_positions()[mobile_joint_indices].copy() if mobile_joint_indices else np.array([], dtype=np.float64)
+    mobile_joint_sign = np.ones(len(mobile_joint_targets), dtype=np.float64)
+    mobile_joint_scale = np.ones(len(mobile_joint_targets), dtype=np.float64)
+    mobile_joint_enabled = np.ones(len(mobile_joint_targets), dtype=bool)
 
     for arm in arms.values():
         pos, rot = arm.ik.compute_end_effector_pose()
@@ -606,6 +629,10 @@ def main(robot_key: str) -> None:
 
     saved_kinematics_info = load_kinematics_info(cfg["kinematics_info_path"])
     loaded_saved_calibration = apply_saved_kinematics_to_arms(arms, saved_kinematics_info)
+    if loaded_saved_calibration:
+        for arm in arms.values():
+            arm.axis_align_enabled = True
+    mobile_joint_sign, mobile_joint_scale, mobile_joint_enabled, _ = load_mobile_calibration(saved_kinematics_info, len(mobile_joint_targets))
     if USE_AXIS_AUTO_ALIGN and not loaded_saved_calibration:
         probe_axiswise_alignment_for_arm("right")
         probe_axiswise_alignment_for_arm("left")
@@ -660,7 +687,9 @@ def main(robot_key: str) -> None:
         else:
             if carb.input.KeyboardInput.TAB in newly_pressed:
                 active_arm = "left" if active_arm == "right" else "right"
-                print(f"[INFO] Active arm switched to: {active_arm.upper()}")
+                if active_control_target != "both":
+                    active_control_target = active_arm
+                print(f"[INFO] Active arm switched to: {active_arm.upper()} | control_target={active_control_target.upper()}")
             if carb.input.KeyboardInput.KEY_1 in newly_pressed:
                 active_control_target = "right"; active_arm = "right"; print("[INFO] Control target -> RIGHT")
             if carb.input.KeyboardInput.KEY_2 in newly_pressed:
@@ -688,11 +717,14 @@ def main(robot_key: str) -> None:
                     is_down(carb.input.KeyboardInput.RIGHT) + is_down(carb.input.KeyboardInput.UP)
                     - is_down(carb.input.KeyboardInput.LEFT) - is_down(carb.input.KeyboardInput.DOWN)
                 )
-                mobile_joint_targets[active_mobile_joint] += selected_dir * mobile_step
+                if mobile_joint_enabled[active_mobile_joint]:
+                    mobile_joint_targets[active_mobile_joint] += selected_dir * mobile_step * mobile_joint_sign[active_mobile_joint] * mobile_joint_scale[active_mobile_joint]
                 key_name_to_input = {name: getattr(carb.input.KeyboardInput, name) for pair in MOBILE_JOINT_KEY_BINDINGS for name in pair}
                 for i, (plus_key, minus_key) in enumerate(MOBILE_JOINT_KEY_BINDINGS[:len(mobile_joint_targets)]):
+                    if not mobile_joint_enabled[i]:
+                        continue
                     direction = is_down(key_name_to_input[plus_key]) - is_down(key_name_to_input[minus_key])
-                    mobile_joint_targets[i] += direction * mobile_step
+                    mobile_joint_targets[i] += direction * mobile_step * mobile_joint_sign[i] * mobile_joint_scale[i]
                 safe_apply_action(controller, make_mobile_joint_action(mobile_joint_indices, mobile_joint_targets))
 
             if log_counter % 60 == 0:
@@ -713,7 +745,7 @@ def main(robot_key: str) -> None:
             desired_delta[1] += d
         if is_down(carb.input.KeyboardInput.RIGHT):
             desired_delta[1] -= d
-        desired_delta = clamp_vec(desired_delta, MAX_DELTA_PER_STEP)
+        desired_delta = clamp_vec(desired_delta * KEYBOARD_BASE_AXIS_SIGN, MAX_DELTA_PER_STEP)
 
         for target_arm in control_arms:
             command_delta = apply_axiswise_correction(target_arm, desired_delta) if target_arm.axis_align_enabled else desired_delta.copy()
@@ -822,13 +854,38 @@ def run_kinematics_validation(robot_key: str, output_path: Optional[str] = None)
             world.step(render=False)
         return ok_last
 
+    mobile_indices = resolve_mobile_joint_indices(robot)
+    mobile_calibration = {"probe_delta_rad": 0.05, "joint_sign": [], "joint_scale": [], "joint_enabled": [], "probes": []}
+    if mobile_indices:
+        start_q = robot.get_joint_positions()[mobile_indices].copy()
+        for i, joint_index in enumerate(mobile_indices):
+            target_q = start_q.copy()
+            target_q[i] += mobile_calibration["probe_delta_rad"]
+            action = make_mobile_joint_action(mobile_indices, target_q)
+            for _ in range(ALIGN_SETTLE_STEPS):
+                safe_apply_action(controller, action, hold_action)
+                world.step(render=False)
+            cur_q = robot.get_joint_positions()[mobile_indices].copy()
+            actual = float(cur_q[i] - start_q[i])
+            sign = 1.0 if actual >= 0.0 else -1.0
+            scale = min(5.0, abs(mobile_calibration["probe_delta_rad"] / actual)) if abs(actual) > 1e-6 else 1.0
+            enabled = abs(actual) > 1e-4
+            mobile_calibration["joint_sign"].append(sign)
+            mobile_calibration["joint_scale"].append(scale)
+            mobile_calibration["joint_enabled"].append(enabled)
+            mobile_calibration["probes"].append({"joint": MOBILE_JOINT_NAMES[i], "joint_index": int(joint_index), "target_delta_rad": mobile_calibration["probe_delta_rad"], "actual_delta_rad": actual, "enabled": enabled})
+            safe_apply_action(controller, make_mobile_joint_action(mobile_indices, start_q), hold_action)
+            for _ in range(ALIGN_RESTORE_STEPS):
+                world.step(render=False)
+        print(f"[VALIDATION] mobile: sign={fmt(mobile_calibration['joint_sign'])} scale={fmt(mobile_calibration['joint_scale'])} enabled={mobile_calibration['joint_enabled']}")
+
     info = {
         "robot_key": robot_key,
         "stage_path": cfg["stage_path"],
         "urdf_path": cfg["urdf_path"],
         "robot_prim_path": robot_prim_path,
         "base_pose": {"position": vec_to_list(base_t), "quat_wxyz": vec_to_list(base_q_use)},
-        "mobile_joints": {"names": MOBILE_JOINT_NAMES, "indices": resolve_mobile_joint_indices(robot)},
+        "mobile_joints": {"names": MOBILE_JOINT_NAMES, "indices": mobile_indices, "calibration": mobile_calibration},
         "arms": {},
     }
 
