@@ -38,10 +38,10 @@ CONTROL_FRAME = "base"  # "base" or "tool"
 KP = 1000.0
 KD = 1200.0
 HOLD_SECONDS = 1.0
-FORCE_BASE_WXYZ_SWAP = True
+FORCE_BASE_WXYZ_SWAP = False # True
 DISABLE_GRAVITY = True
 
-USE_AXIS_AUTO_ALIGN = True
+USE_AXIS_AUTO_ALIGN = False # True
 ALIGN_PROBE_DIST = 0.035
 ALIGN_SETTLE_STEPS = 70
 ALIGN_RESTORE_STEPS = 70
@@ -505,7 +505,7 @@ def main(robot_key: str) -> None:
         "left": ArmState("left", left_kin, left_ik, cfg["left_ee_frame"]),
     }
     active_arm = "right"
-    active_control_target = "both"
+    active_control_target = "right" #"both"
     control_mode = "arm"  # "arm" or "mobile"
     active_mobile_joint = 0
     mobile_joint_indices = resolve_mobile_joint_indices(robot)
