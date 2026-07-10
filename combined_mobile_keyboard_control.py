@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 import argparse
+import json
+from pathlib import Path
 import numpy as np
 
 from isaacsim import SimulationApp
@@ -69,6 +71,7 @@ ROBOT_CONFIGS = {
         "urdf_path": "./humanoid_urdf_assemble/urdf/combined_mobile_humanoid_base.urdf",
         "robot_prim_path": "/World/combined_mobile_humanoid_base",
         "articulation_root_link": "base_mobile",
+        "kinematics_info_path": "./humanoid_kinematics_info.json",
         "right_desc_yaml": "./combined_mobile_humanoid_base_right_arm_robot_descriptor.yaml",
         "left_desc_yaml": "./combined_mobile_humanoid_base_left_arm_robot_descriptor.yaml",
         "right_ee_frame": "link6_R",
@@ -79,6 +82,7 @@ ROBOT_CONFIGS = {
         "urdf_path": "./humanoid_urdf_assemble/urdf/combined_mobile_v4_onlyarm.urdf",
         "robot_prim_path": "/World/combined_mobile_v4_onlyarm",
         "articulation_root_link": "base_mobile",
+        "kinematics_info_path": "./onlyarm_kinematics_info.json",
         "right_desc_yaml": "./combined_mobile_v4_onlyarm_right_arm_robot_descriptor.yaml",
         "left_desc_yaml": "./combined_mobile_v4_onlyarm_left_arm_robot_descriptor.yaml",
         "right_ee_frame": "link7",
@@ -89,6 +93,53 @@ ROBOT_CONFIGS = {
 
 def fmt(a):
     return np.array2string(np.asarray(a), precision=5, suppress_small=True)
+
+
+def vec_to_list(a):
+    return np.asarray(a, dtype=np.float64).reshape(-1).tolist()
+
+
+def load_kinematics_info(path: str) -> Optional[dict]:
+    info_path = Path(path)
+    if not info_path.exists():
+        return None
+    try:
+        with info_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as exc:
+        print(f"[WARN] Failed to load kinematics info {path}: {exc}")
+        return None
+
+
+def save_kinematics_info(path: str, info: dict) -> None:
+    info_path = Path(path)
+    with info_path.open("w", encoding="utf-8") as f:
+        json.dump(info, f, indent=2, sort_keys=True)
+        f.write("\n")
+    print(f"[INFO] Kinematics info saved: {info_path}")
+
+
+def apply_saved_kinematics_to_arms(arms: dict, info: Optional[dict]) -> bool:
+    if not info:
+        return False
+    arm_info = info.get("arms", {})
+    applied = False
+    for arm_name, arm in arms.items():
+        calib = arm_info.get(arm_name, {}).get("axis_calibration")
+        if not calib:
+            continue
+        arm.axis_sign = np.asarray(calib.get("axis_sign", arm.axis_sign), dtype=np.float64)
+        arm.axis_scale = np.asarray(calib.get("axis_scale", arm.axis_scale), dtype=np.float64)
+        arm.axis_enabled = np.asarray(calib.get("axis_enabled", arm.axis_enabled), dtype=bool)
+        if "axis_response" in calib:
+            arm.axis_response = np.asarray(calib["axis_response"], dtype=np.float64)
+        if "axis_quality" in calib:
+            arm.axis_quality = np.asarray(calib["axis_quality"], dtype=np.float64)
+        applied = True
+        print(f"[INFO] Loaded saved kinematics calibration for {arm_name}: sign={fmt(arm.axis_sign)} scale={fmt(arm.axis_scale)} enabled={arm.axis_enabled}")
+    return applied
+
+
 
 
 def as_wxyz_quat(rot):
@@ -399,6 +450,8 @@ class ArmState:
     axis_sign: np.ndarray = field(default_factory=lambda: np.ones(3, dtype=np.float64))
     axis_scale: np.ndarray = field(default_factory=lambda: np.ones(3, dtype=np.float64))
     axis_enabled: np.ndarray = field(default_factory=lambda: np.ones(3, dtype=bool))
+    axis_quality: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
+    axis_response: np.ndarray = field(default_factory=lambda: np.eye(3, dtype=np.float64))
 
 
 def main(robot_key: str) -> None:
@@ -515,6 +568,8 @@ def main(robot_key: str) -> None:
         signs = np.ones(3, dtype=np.float64)
         scales = np.ones(3, dtype=np.float64)
         enabled = np.ones(3, dtype=bool)
+        responses = np.zeros((3, 3), dtype=np.float64)
+        qualities = np.zeros(3, dtype=np.float64)
         for label, desired, idx in [
             ("X", np.array([ALIGN_PROBE_DIST, 0.0, 0.0]), 0),
             ("Y", np.array([0.0, ALIGN_PROBE_DIST, 0.0]), 1),
@@ -523,8 +578,10 @@ def main(robot_key: str) -> None:
             ok = step_to_target_for_arm(arm, start_pos + desired, start_quat)
             cur_pos, _ = arm.ik.compute_end_effector_pose()
             actual = np.array(cur_pos, dtype=np.float64) - start_pos
+            responses[:, idx] = actual
             comp = actual[idx]
             align = alignment_score(actual, desired)
+            qualities[idx] = align
             signs[idx] = 1.0 if comp >= 0.0 else -1.0
             scales[idx] = min(3.0, ALIGN_PROBE_DIST / abs(comp)) if abs(comp) > 1e-9 else 1.0
             enabled[idx] = align >= MIN_ALIGN_TO_ENABLE and np.linalg.norm(actual) >= MIN_RESPONSE_NORM
@@ -533,6 +590,8 @@ def main(robot_key: str) -> None:
         arm.axis_sign = signs
         arm.axis_scale = scales
         arm.axis_enabled = enabled
+        arm.axis_quality = qualities
+        arm.axis_response = responses
         cur_pos, cur_rot = arm.ik.compute_end_effector_pose()
         arm.target_pos = np.array(cur_pos, dtype=np.float64)
         arm.target_quat = as_wxyz_quat(cur_rot)
@@ -545,7 +604,9 @@ def main(robot_key: str) -> None:
             corrected[i] = arm.axis_sign[i] * arm.axis_scale[i] * desired_delta_base[i] if arm.axis_enabled[i] else 0.0
         return corrected
 
-    if USE_AXIS_AUTO_ALIGN:
+    saved_kinematics_info = load_kinematics_info(cfg["kinematics_info_path"])
+    loaded_saved_calibration = apply_saved_kinematics_to_arms(arms, saved_kinematics_info)
+    if USE_AXIS_AUTO_ALIGN and not loaded_saved_calibration:
         probe_axiswise_alignment_for_arm("right")
         probe_axiswise_alignment_for_arm("left")
 
@@ -704,6 +765,115 @@ def main(robot_key: str) -> None:
             print(f"[status] mode=ARM ok={ok} view_arm={arm.name.upper()} control_target={active_control_target.upper()} frame={CONTROL_FRAME.upper()} "
                   f"target={fmt(arm.target_pos)} current={fmt(cur_pos)} err={pos_err:.5f} enabled={arm.axis_enabled}")
 
+    simulation_app.close()
+
+
+def run_kinematics_validation(robot_key: str, output_path: Optional[str] = None) -> None:
+    cfg = ROBOT_CONFIGS[robot_key]
+    output_path = output_path or cfg["kinematics_info_path"]
+
+    open_stage(cfg["stage_path"])
+    stage = get_current_stage()
+    robot_prim_path = select_articulation_root_path(stage, cfg["articulation_root_link"])
+    configure_mobile_joint_usd_limits(stage)
+    if DISABLE_GRAVITY:
+        disable_robot_gravity(stage, robot_prim_path)
+
+    world = World()
+    world.scene.add_default_ground_plane()
+    robot = Articulation(robot_prim_path)
+    world.scene.add(robot)
+    world.reset()
+    wait_for_articulation_ready(world, robot)
+
+    controller = robot.get_articulation_controller()
+    jp0 = robot.get_joint_positions()
+    hold_action = ArticulationAction(joint_positions=jp0, joint_velocities=np.zeros_like(jp0))
+
+    right_kin = LulaKinematicsSolver(robot_description_path=cfg["right_desc_yaml"], urdf_path=cfg["urdf_path"])
+    left_kin = LulaKinematicsSolver(robot_description_path=cfg["left_desc_yaml"], urdf_path=cfg["urdf_path"])
+    set_ik_iters(right_kin, 80)
+    set_ik_iters(left_kin, 80)
+    right_ik = ArticulationKinematicsSolver(robot, right_kin, cfg["right_ee_frame"])
+    left_ik = ArticulationKinematicsSolver(robot, left_kin, cfg["left_ee_frame"])
+
+    base_t, base_q_raw = robot.get_world_pose()
+    base_q_use = to_wxyz_from_xyzw(base_q_raw) if FORCE_BASE_WXYZ_SWAP else np.array(base_q_raw, dtype=np.float64)
+    right_kin.set_robot_base_pose(base_t, base_q_use)
+    left_kin.set_robot_base_pose(base_t, base_q_use)
+
+    arms = {
+        "right": ArmState("right", right_kin, right_ik, cfg["right_ee_frame"]),
+        "left": ArmState("left", left_kin, left_ik, cfg["left_ee_frame"]),
+    }
+
+    def refresh_base_pose_for_validation():
+        base_t_now, _ = robot.get_world_pose()
+        right_kin.set_robot_base_pose(base_t_now, base_q_use)
+        left_kin.set_robot_base_pose(base_t_now, base_q_use)
+
+    def step_probe(arm: ArmState, goal_pos, goal_quat, steps=ALIGN_SETTLE_STEPS):
+        ok_last = False
+        for _ in range(steps):
+            refresh_base_pose_for_validation()
+            action, ok = arm.ik.compute_inverse_kinematics(goal_pos, goal_quat)
+            ok_last = ok
+            safe_apply_action(controller, action if ok else None, hold_action)
+            world.step(render=False)
+        return ok_last
+
+    info = {
+        "robot_key": robot_key,
+        "stage_path": cfg["stage_path"],
+        "urdf_path": cfg["urdf_path"],
+        "robot_prim_path": robot_prim_path,
+        "base_pose": {"position": vec_to_list(base_t), "quat_wxyz": vec_to_list(base_q_use)},
+        "mobile_joints": {"names": MOBILE_JOINT_NAMES, "indices": resolve_mobile_joint_indices(robot)},
+        "arms": {},
+    }
+
+    for arm_name, arm in arms.items():
+        refresh_base_pose_for_validation()
+        start_pos, start_rot = arm.ik.compute_end_effector_pose()
+        start_pos = np.asarray(start_pos, dtype=np.float64)
+        start_quat = as_wxyz_quat(start_rot)
+        responses = np.zeros((3, 3), dtype=np.float64)
+        signs = np.ones(3, dtype=np.float64)
+        scales = np.ones(3, dtype=np.float64)
+        enabled = np.ones(3, dtype=bool)
+        qualities = np.zeros(3, dtype=np.float64)
+        probes = [("x", np.array([ALIGN_PROBE_DIST, 0.0, 0.0]), 0), ("y", np.array([0.0, ALIGN_PROBE_DIST, 0.0]), 1), ("z", np.array([0.0, 0.0, ALIGN_PROBE_DIST]), 2)]
+        probe_rows = []
+        for label, desired, idx in probes:
+            ok = step_probe(arm, start_pos + desired, start_quat)
+            cur_pos, _ = arm.ik.compute_end_effector_pose()
+            actual = np.asarray(cur_pos, dtype=np.float64) - start_pos
+            responses[:, idx] = actual
+            comp = actual[idx]
+            align = alignment_score(actual, desired)
+            signs[idx] = 1.0 if comp >= 0.0 else -1.0
+            scales[idx] = min(3.0, ALIGN_PROBE_DIST / abs(comp)) if abs(comp) > 1e-9 else 1.0
+            enabled[idx] = align >= MIN_ALIGN_TO_ENABLE and np.linalg.norm(actual) >= MIN_RESPONSE_NORM
+            qualities[idx] = align
+            probe_rows.append({"axis": label, "desired_delta_base": vec_to_list(desired), "actual_delta": vec_to_list(actual), "ik_ok": bool(ok), "alignment": float(align)})
+            step_probe(arm, start_pos, start_quat, steps=ALIGN_RESTORE_STEPS)
+
+        info["arms"][arm_name] = {
+            "frame_name": arm.frame_name,
+            "start_pose": {"position": vec_to_list(start_pos), "quat_wxyz": vec_to_list(start_quat)},
+            "axis_calibration": {
+                "probe_distance_m": ALIGN_PROBE_DIST,
+                "axis_sign": vec_to_list(signs),
+                "axis_scale": vec_to_list(scales),
+                "axis_enabled": enabled.astype(bool).tolist(),
+                "axis_quality": vec_to_list(qualities),
+                "axis_response": responses.tolist(),
+                "probes": probe_rows,
+            },
+        }
+        print(f"[VALIDATION] {arm_name}: sign={fmt(signs)} scale={fmt(scales)} enabled={enabled} quality={fmt(qualities)}")
+
+    save_kinematics_info(output_path, info)
     simulation_app.close()
 
 
