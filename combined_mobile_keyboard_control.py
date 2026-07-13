@@ -46,6 +46,12 @@ USE_AXIS_AUTO_ALIGN = False  # True
 ALIGN_PROBE_DIST = 0.035
 ALIGN_SETTLE_STEPS = 70
 ALIGN_RESTORE_STEPS = 70
+KINEMATICS_TUNING_PROFILES = [
+    {"name": "default", "probe_dist": 0.035, "settle_steps": 70, "restore_steps": 70, "ik_iters": 80},
+    {"name": "long_settle", "probe_dist": 0.035, "settle_steps": 140, "restore_steps": 100, "ik_iters": 120},
+    {"name": "larger_probe", "probe_dist": 0.050, "settle_steps": 180, "restore_steps": 120, "ik_iters": 160},
+    {"name": "small_probe", "probe_dist": 0.020, "settle_steps": 180, "restore_steps": 120, "ik_iters": 160},
+]
 MIN_ALIGN_TO_ENABLE = 0.35
 MIN_RESPONSE_NORM = 0.0015
 MAX_DELTA_PER_STEP = 0.2
@@ -155,6 +161,8 @@ def apply_saved_kinematics_to_arms(arms: dict, info: Optional[dict]) -> bool:
             arm.axis_response = np.asarray(calib["axis_response"], dtype=np.float64)
         if "axis_quality" in calib:
             arm.axis_quality = np.asarray(calib["axis_quality"], dtype=np.float64)
+        if "probe_distance_m" in calib:
+            arm.axis_probe_dist = float(calib["probe_distance_m"])
         applied = True
         print(f"[INFO] Loaded saved kinematics calibration for {arm_name}: sign={fmt(arm.axis_sign)} scale={fmt(arm.axis_scale)} enabled={arm.axis_enabled}")
     return applied
@@ -472,6 +480,7 @@ class ArmState:
     axis_enabled: np.ndarray = field(default_factory=lambda: np.ones(3, dtype=bool))
     axis_quality: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
     axis_response: np.ndarray = field(default_factory=lambda: np.eye(3, dtype=np.float64))
+    axis_probe_dist: float = ALIGN_PROBE_DIST
 
 
 def main(robot_key: str) -> None:
@@ -607,7 +616,7 @@ def main(robot_key: str) -> None:
             qualities[idx] = align
             signs[idx] = 1.0 if comp >= 0.0 else -1.0
             scales[idx] = min(3.0, ALIGN_PROBE_DIST / abs(comp)) if abs(comp) > 1e-9 else 1.0
-            enabled[idx] = align >= MIN_ALIGN_TO_ENABLE and np.linalg.norm(actual) >= MIN_RESPONSE_NORM
+            enabled[idx] = abs(align) >= MIN_ALIGN_TO_ENABLE and np.linalg.norm(actual) >= MIN_RESPONSE_NORM
             print(f"[{arm.name.upper()}] axis {label}: desired={fmt(desired)} actual={fmt(actual)} align={align:+.4f} enabled={enabled[idx]} ok={ok}")
             step_to_target_for_arm(arm, start_pos, start_quat, steps=ALIGN_RESTORE_STEPS)
         arm.axis_sign = signs
@@ -615,6 +624,7 @@ def main(robot_key: str) -> None:
         arm.axis_enabled = enabled
         arm.axis_quality = qualities
         arm.axis_response = responses
+        arm.axis_probe_dist = ALIGN_PROBE_DIST
         cur_pos, cur_rot = arm.ik.compute_end_effector_pose()
         arm.target_pos = np.array(cur_pos, dtype=np.float64)
         arm.target_quat = as_wxyz_quat(cur_rot)
@@ -622,6 +632,11 @@ def main(robot_key: str) -> None:
         print(f"[{arm.name.upper()}] axis_enabled={arm.axis_enabled} axis_sign={fmt(arm.axis_sign)} axis_scale={fmt(arm.axis_scale)}")
 
     def apply_axiswise_correction(arm: ArmState, desired_delta_base):
+        response = np.asarray(arm.axis_response, dtype=np.float64)
+        if response.shape == (3, 3) and arm.axis_probe_dist > 1e-9 and np.linalg.matrix_rank(response) >= 2:
+            response_per_meter = response / arm.axis_probe_dist
+            corrected = np.linalg.pinv(response_per_meter) @ np.asarray(desired_delta_base, dtype=np.float64)
+            return corrected
         corrected = np.zeros(3, dtype=np.float64)
         for i in range(3):
             corrected[i] = arm.axis_sign[i] * arm.axis_scale[i] * desired_delta_base[i] if arm.axis_enabled[i] else 0.0
@@ -889,46 +904,100 @@ def run_kinematics_validation(robot_key: str, output_path: Optional[str] = None)
         "arms": {},
     }
 
-    for arm_name, arm in arms.items():
+    def probe_arm_with_profile(arm: ArmState, profile: dict):
+        set_ik_iters(arm.kin, int(profile["ik_iters"]))
         refresh_base_pose_for_validation()
         start_pos, start_rot = arm.ik.compute_end_effector_pose()
         start_pos = np.asarray(start_pos, dtype=np.float64)
         start_quat = as_wxyz_quat(start_rot)
+        probe_dist = float(profile["probe_dist"])
         responses = np.zeros((3, 3), dtype=np.float64)
         signs = np.ones(3, dtype=np.float64)
         scales = np.ones(3, dtype=np.float64)
         enabled = np.ones(3, dtype=bool)
         qualities = np.zeros(3, dtype=np.float64)
-        probes = [("x", np.array([ALIGN_PROBE_DIST, 0.0, 0.0]), 0), ("y", np.array([0.0, ALIGN_PROBE_DIST, 0.0]), 1), ("z", np.array([0.0, 0.0, ALIGN_PROBE_DIST]), 2)]
+        probes = [("x", np.array([probe_dist, 0.0, 0.0]), 0), ("y", np.array([0.0, probe_dist, 0.0]), 1), ("z", np.array([0.0, 0.0, probe_dist]), 2)]
         probe_rows = []
+        total_error = 0.0
         for label, desired, idx in probes:
-            ok = step_probe(arm, start_pos + desired, start_quat)
+            ok = step_probe(arm, start_pos + desired, start_quat, steps=int(profile["settle_steps"]))
             cur_pos, _ = arm.ik.compute_end_effector_pose()
             actual = np.asarray(cur_pos, dtype=np.float64) - start_pos
             responses[:, idx] = actual
             comp = actual[idx]
             align = alignment_score(actual, desired)
             signs[idx] = 1.0 if comp >= 0.0 else -1.0
-            scales[idx] = min(3.0, ALIGN_PROBE_DIST / abs(comp)) if abs(comp) > 1e-9 else 1.0
-            enabled[idx] = align >= MIN_ALIGN_TO_ENABLE and np.linalg.norm(actual) >= MIN_RESPONSE_NORM
+            scales[idx] = min(3.0, probe_dist / abs(comp)) if abs(comp) > 1e-9 else 1.0
+            enabled[idx] = abs(align) >= MIN_ALIGN_TO_ENABLE and np.linalg.norm(actual) >= MIN_RESPONSE_NORM
             qualities[idx] = align
-            probe_rows.append({"axis": label, "desired_delta_base": vec_to_list(desired), "actual_delta": vec_to_list(actual), "ik_ok": bool(ok), "alignment": float(align)})
-            step_probe(arm, start_pos, start_quat, steps=ALIGN_RESTORE_STEPS)
+            total_error += float(np.linalg.norm(desired - actual))
+            probe_rows.append({
+                "axis": label,
+                "desired_delta_base": vec_to_list(desired),
+                "actual_delta": vec_to_list(actual),
+                "ik_ok": bool(ok),
+                "alignment": float(align),
+                "abs_alignment": float(abs(align)),
+                "error_norm": float(np.linalg.norm(desired - actual)),
+            })
+            step_probe(arm, start_pos, start_quat, steps=int(profile["restore_steps"]))
+        score = (int(np.count_nonzero(enabled)), float(np.mean(np.abs(qualities))), -total_error)
+        return {
+            "profile": profile,
+            "score": score,
+            "start_pos": start_pos,
+            "start_quat": start_quat,
+            "responses": responses,
+            "signs": signs,
+            "scales": scales,
+            "enabled": enabled,
+            "qualities": qualities,
+            "probe_rows": probe_rows,
+            "total_error": total_error,
+        }
 
+    for arm_name, arm in arms.items():
+        attempts = []
+        for profile in KINEMATICS_TUNING_PROFILES:
+            result = probe_arm_with_profile(arm, profile)
+            attempts.append(result)
+            print(
+                f"[TUNING] {arm_name}/{profile['name']}: enabled={result['enabled']} "
+                f"mean_abs_align={np.mean(np.abs(result['qualities'])):.4f} total_error={result['total_error']:.5f}"
+            )
+            if np.all(result["enabled"]):
+                break
+        best = max(attempts, key=lambda r: r["score"])
+        matrix_rank = int(np.linalg.matrix_rank(best["responses"]))
+        if not np.all(best["enabled"]) and matrix_rank >= 2:
+            print(f"[TUNING] {arm_name}: enabling all axes because response matrix rank={matrix_rank}; controller will use pseudo-inverse correction")
+            best["enabled"] = np.ones(3, dtype=bool)
+        force_enabled = bool(np.all(best["enabled"]))
         info["arms"][arm_name] = {
             "frame_name": arm.frame_name,
-            "start_pose": {"position": vec_to_list(start_pos), "quat_wxyz": vec_to_list(start_quat)},
+            "start_pose": {"position": vec_to_list(best["start_pos"]), "quat_wxyz": vec_to_list(best["start_quat"])},
             "axis_calibration": {
-                "probe_distance_m": ALIGN_PROBE_DIST,
-                "axis_sign": vec_to_list(signs),
-                "axis_scale": vec_to_list(scales),
-                "axis_enabled": enabled.astype(bool).tolist(),
-                "axis_quality": vec_to_list(qualities),
-                "axis_response": responses.tolist(),
-                "probes": probe_rows,
+                "probe_distance_m": float(best["profile"]["probe_dist"]),
+                "axis_sign": vec_to_list(best["signs"]),
+                "axis_scale": vec_to_list(best["scales"]),
+                "axis_enabled": best["enabled"].astype(bool).tolist(),
+                "axis_quality": vec_to_list(best["qualities"]),
+                "axis_response": best["responses"].tolist(),
+                "probes": best["probe_rows"],
+                "selected_profile": best["profile"],
+                "all_axes_enabled": force_enabled,
+                "tuning_attempts": [
+                    {
+                        "profile": r["profile"],
+                        "enabled": r["enabled"].astype(bool).tolist(),
+                        "mean_abs_alignment": float(np.mean(np.abs(r["qualities"]))),
+                        "total_error": float(r["total_error"]),
+                    }
+                    for r in attempts
+                ],
             },
         }
-        print(f"[VALIDATION] {arm_name}: sign={fmt(signs)} scale={fmt(scales)} enabled={enabled} quality={fmt(qualities)}")
+        print(f"[VALIDATION] {arm_name}: selected={best['profile']['name']} sign={fmt(best['signs'])} scale={fmt(best['scales'])} enabled={best['enabled']} quality={fmt(best['qualities'])}")
 
     save_kinematics_info(output_path, info)
     simulation_app.close()
