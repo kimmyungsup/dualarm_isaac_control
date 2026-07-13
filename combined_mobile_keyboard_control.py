@@ -58,8 +58,12 @@ MAX_DELTA_PER_STEP = 0.2
 MAX_TARGET_OFFSET_FROM_START = np.array([0.60, 0.60, 0.60], dtype=np.float64)
 MOBILE_JOINT_LOWER_RAD = -np.pi
 MOBILE_JOINT_UPPER_RAD = np.pi
-MOBILE_JOINT_MAX_FORCE = 5000.0
+MOBILE_JOINT_MAX_FORCE = 50000.0
+MOBILE_JOINT_STIFFNESS = 20000.0
+MOBILE_JOINT_DAMPING = 2000.0
 MOBILE_JOINT_NAMES = [f"joint{i}_mobile" for i in range(1, 9)]
+MOBILE_PRIMARY_Z_JOINT_NAMES = ["joint3_mobile", "joint4_mobile", "joint5_mobile", "joint6_mobile"]
+MOBILE_INITIAL_JOINT_POSITIONS = {"joint3_mobile": float(np.deg2rad(30.0))}
 MOBILE_JOINT_KEY_BINDINGS = [
     ("Q", "A"),
     ("W", "S"),
@@ -276,6 +280,36 @@ def resolve_mobile_joint_indices(robot) -> list[int]:
     return indices
 
 
+def mobile_primary_z_joint_indices(mobile_joint_indices):
+    indices = []
+    for name in MOBILE_PRIMARY_Z_JOINT_NAMES:
+        if name in MOBILE_JOINT_NAMES:
+            local_idx = MOBILE_JOINT_NAMES.index(name)
+            if local_idx < len(mobile_joint_indices):
+                indices.append(local_idx)
+    return indices
+
+
+def apply_initial_mobile_pose(robot, controller, mobile_joint_indices, world, steps: int = 90):
+    if not mobile_joint_indices or not MOBILE_INITIAL_JOINT_POSITIONS:
+        return
+    current = robot.get_joint_positions()[mobile_joint_indices].copy()
+    for name, value in MOBILE_INITIAL_JOINT_POSITIONS.items():
+        if name in MOBILE_JOINT_NAMES:
+            local_idx = MOBILE_JOINT_NAMES.index(name)
+            if local_idx < len(current):
+                current[local_idx] = value
+    try:
+        robot.set_joint_positions(current, joint_indices=np.asarray(mobile_joint_indices, dtype=np.int32))
+    except Exception as exc:
+        print(f"[WARN] Direct initial mobile pose set failed; using drive command only: {exc}")
+    action = make_mobile_joint_action(mobile_joint_indices, current)
+    for _ in range(steps):
+        safe_apply_action(controller, action)
+        world.step(render=False)
+    print(f"[INFO] Initial mobile ladder pose applied: {MOBILE_INITIAL_JOINT_POSITIONS}")
+
+
 def make_mobile_joint_action(mobile_joint_indices, mobile_joint_targets):
     return ArticulationAction(
         joint_positions=np.asarray(mobile_joint_targets, dtype=np.float64),
@@ -326,6 +360,8 @@ def configure_mobile_joint_usd_limits(stage) -> None:
             drive = UsdPhysics.DriveAPI.Get(prim, "angular")
             if not drive:
                 drive = UsdPhysics.DriveAPI.Apply(prim, "angular")
+            drive.CreateStiffnessAttr(MOBILE_JOINT_STIFFNESS).Set(MOBILE_JOINT_STIFFNESS)
+            drive.CreateDampingAttr(MOBILE_JOINT_DAMPING).Set(MOBILE_JOINT_DAMPING)
             drive.CreateMaxForceAttr(MOBILE_JOINT_MAX_FORCE).Set(MOBILE_JOINT_MAX_FORCE)
         except Exception as exc:
             print(f"[WARN] Could not configure angular drive force for {prim.GetPath()}: {exc}")
@@ -334,7 +370,8 @@ def configure_mobile_joint_usd_limits(stage) -> None:
     if configured:
         print(
             f"[INFO] Mobile USD joint limits configured for {configured} joints: "
-            f"lower={MOBILE_JOINT_LOWER_RAD:.3f}, upper={MOBILE_JOINT_UPPER_RAD:.3f}, max_force={MOBILE_JOINT_MAX_FORCE:.1f}"
+            f"lower={MOBILE_JOINT_LOWER_RAD:.3f}, upper={MOBILE_JOINT_UPPER_RAD:.3f}, "
+            f"stiffness={MOBILE_JOINT_STIFFNESS:.1f}, damping={MOBILE_JOINT_DAMPING:.1f}, max_force={MOBILE_JOINT_MAX_FORCE:.1f}"
         )
     else:
         print("[WARN] No mobile joint prims found while configuring USD joint limits")
@@ -508,6 +545,9 @@ def main(robot_key: str) -> None:
         except Exception as exc:
             print(f"[WARN] controller.set_gains skipped because the articulation physics view is not ready: {exc}")
 
+    initial_mobile_joint_indices = resolve_mobile_joint_indices(robot)
+    apply_initial_mobile_pose(robot, controller, initial_mobile_joint_indices, world)
+
     jp0 = robot.get_joint_positions()
     if jp0 is None:
         raise RuntimeError("Robot articulation initialized but returned no joint positions.")
@@ -536,8 +576,9 @@ def main(robot_key: str) -> None:
     active_arm = "right"
     active_control_target = "right"  # "both"
     control_mode = "arm"  # "arm" or "mobile"
-    active_mobile_joint = 0
     mobile_joint_indices = resolve_mobile_joint_indices(robot)
+    primary_z_indices = mobile_primary_z_joint_indices(mobile_joint_indices)
+    active_mobile_joint = primary_z_indices[0] if primary_z_indices else 0
     mobile_joint_targets = robot.get_joint_positions()[mobile_joint_indices].copy() if mobile_joint_indices else np.array([], dtype=np.float64)
     mobile_joint_sign = np.ones(len(mobile_joint_targets), dtype=np.float64)
     mobile_joint_scale = np.ones(len(mobile_joint_targets), dtype=np.float64)
@@ -661,7 +702,7 @@ def main(robot_key: str) -> None:
     print("  R: reset selected arm target pose")
     print("  M: toggle axis auto alignment on/off for active arm")
     print("  T/G: re-run axis auto alignment for active/both arms")
-    print("  [MOBILE] 1-8: select mobile joint")
+    print("  [MOBILE] 1-8: select mobile joint (default starts at joint3_mobile / z-axis group)")
     print("  [MOBILE] Left/Down: selected joint - | Right/Up: selected joint +")
     print("  [MOBILE] Q/A W/S E/D R/F T/G Y/H U/J I/K: joint1..joint8 +/-")
     print("  ESC: quit")
