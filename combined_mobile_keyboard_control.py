@@ -846,6 +846,9 @@ def main(robot_key: str) -> None:
             ok = ok and arm_ok
             safe_apply_action(controller, action if arm_ok else None, hold_action)
 
+        if len(mobile_joint_targets) > 0:
+            safe_apply_action(controller, make_mobile_joint_action(mobile_joint_indices, mobile_joint_targets))
+
         if log_counter % 60 == 0:
             arm = arms[active_arm]
             cur_pos, _ = arm.ik.compute_end_effector_pose()
